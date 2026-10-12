@@ -1,0 +1,788 @@
+{
+  "application": "Extreme Calculator",
+  "version": 1,
+  "exportedAt": "2026-10-03T00:34:02.554Z",
+  "entries": [
+    {
+      "expression": "sin(45)",
+      "result": "0.707106781187",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.445Z"
+    },
+    {
+      "expression": "cos(45)",
+      "result": "0.707106781187",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.454Z"
+    },
+    {
+      "expression": "tan(45)",
+      "result": "1",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.455Z"
+    },
+    {
+      "expression": "asin(0.5)",
+      "result": "30",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.455Z"
+    },
+    {
+      "expression": "acos(0.5)",
+      "result": "60",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.455Z"
+    },
+    {
+      "expression": "atan(0.5)",
+      "result": "26.5650511771",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.456Z"
+    },
+    {
+      "expression": "sec(45)",
+      "result": "1.41421356237",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.456Z"
+    },
+    {
+      "expression": "csc(45)",
+      "result": "1.41421356237",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.457Z"
+    },
+    {
+      "expression": "cot(45)",
+      "result": "1",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.457Z"
+    },
+    {
+      "expression": "todeg(pi)",
+      "result": "180",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.458Z"
+    },
+    {
+      "expression": "torad(180)",
+      "result": "3.14159265359",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.459Z"
+    },
+    {
+      "expression": "dms(-30, 15, 30)",
+      "result": "-30.2583333333",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.459Z"
+    },
+    {
+      "expression": "atan2(1, -1)",
+      "result": "135",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.460Z"
+    },
+    {
+      "expression": "sinh(1)",
+      "result": "1.17520119364",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.461Z"
+    },
+    {
+      "expression": "cosh(1)",
+      "result": "1.54308063482",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.462Z"
+    },
+    {
+      "expression": "tanh(1)",
+      "result": "0.761594155956",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.462Z"
+    },
+    {
+      "expression": "asinh(1)",
+      "result": "0.88137358702",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.463Z"
+    },
+    {
+      "expression": "acosh(1)",
+      "result": "0",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.464Z"
+    },
+    {
+      "expression": "atanh(0.5)",
+      "result": "0.549306144334",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.465Z"
+    },
+    {
+      "expression": "sqrt(1)",
+      "result": "1",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.466Z"
+    },
+    {
+      "expression": "cbrt(1)",
+      "result": "1",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.467Z"
+    },
+    {
+      "expression": "abs(1)",
+      "result": "1",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.468Z"
+    },
+    {
+      "expression": "exp(1)",
+      "result": "2.71828182846",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.469Z"
+    },
+    {
+      "expression": "floor(1)",
+      "result": "1",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.470Z"
+    },
+    {
+      "expression": "ceil(1)",
+      "result": "1",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.471Z"
+    },
+    {
+      "expression": "round(1)",
+      "result": "1",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.472Z"
+    },
+    {
+      "expression": "ln(e)",
+      "result": "1",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.473Z"
+    },
+    {
+      "expression": "log(8, 2)",
+      "result": "3",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.474Z"
+    },
+    {
+      "expression": "factorial(5)",
+      "result": "120",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.476Z"
+    },
+    {
+      "expression": "ncr(5, 2)",
+      "result": "10",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.477Z"
+    },
+    {
+      "expression": "npr(5, 2)",
+      "result": "20",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.479Z"
+    },
+    {
+      "expression": "min(1, 2, 3)",
+      "result": "1",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.480Z"
+    },
+    {
+      "expression": "max(1, 2, 3)",
+      "result": "3",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.482Z"
+    },
+    {
+      "expression": "sum(1, 2, 3)",
+      "result": "6",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.483Z"
+    },
+    {
+      "expression": "mean(1, 2, 3)",
+      "result": "2",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.485Z"
+    },
+    {
+      "expression": "hypot(1, 2, 3)",
+      "result": "3.74165738677",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.486Z"
+    },
+    {
+      "expression": "det([[1,2],[3,4]])",
+      "result": "-2",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.488Z"
+    },
+    {
+      "expression": "inverse([[1,2],[3,4]])",
+      "result": "[[-2, 1], [1.5, -0.5]]",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.490Z"
+    },
+    {
+      "expression": "transpose([[1,2],[3,4]])",
+      "result": "[[1, 3], [2, 4]]",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.492Z"
+    },
+    {
+      "expression": "dot([1,2], [3,4])",
+      "result": "11",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.494Z"
+    },
+    {
+      "expression": "norm([3,4])",
+      "result": "5",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.496Z"
+    },
+    {
+      "expression": "and(0b1010, 0b1100)",
+      "result": "8",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.498Z"
+    },
+    {
+      "expression": "or(0b1010, 0b1100)",
+      "result": "14",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.500Z"
+    },
+    {
+      "expression": "xor(0b1010, 0b1100)",
+      "result": "6",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.502Z"
+    },
+    {
+      "expression": "not(0)",
+      "result": "-1",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.504Z"
+    },
+    {
+      "expression": "shl(8, 2)",
+      "result": "32",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.506Z"
+    },
+    {
+      "expression": "shr(8, 2)",
+      "result": "2",
+      "ok": true,
+      "kind": "calculation",
+      "angle": "deg",
+      "timestamp": "2026-10-03T00:34:02.508Z"
+    }
+  ],
+  "verification": {
+    "verifiedAt": "2026-10-03T00:34:02.639Z",
+    "browser": "153.0.8010.52",
+    "functionCount": 47,
+    "successfulRuns": 47,
+    "exportMatchesComponentLog": true,
+    "reloadPreservesCompleteLog": true,
+    "cases": [
+      {
+        "function": "sin",
+        "expression": "sin(45)",
+        "returnedValue": 0.7071067811865475,
+        "displayedResult": "0.707106781187",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "cos",
+        "expression": "cos(45)",
+        "returnedValue": 0.7071067811865476,
+        "displayedResult": "0.707106781187",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "tan",
+        "expression": "tan(45)",
+        "returnedValue": 0.9999999999999999,
+        "displayedResult": "1",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "asin",
+        "expression": "asin(0.5)",
+        "returnedValue": 30.000000000000004,
+        "displayedResult": "30",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "acos",
+        "expression": "acos(0.5)",
+        "returnedValue": 60.00000000000001,
+        "displayedResult": "60",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "atan",
+        "expression": "atan(0.5)",
+        "returnedValue": 26.56505117707799,
+        "displayedResult": "26.5650511771",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "sec",
+        "expression": "sec(45)",
+        "returnedValue": 1.414213562373095,
+        "displayedResult": "1.41421356237",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "csc",
+        "expression": "csc(45)",
+        "returnedValue": 1.4142135623730951,
+        "displayedResult": "1.41421356237",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "cot",
+        "expression": "cot(45)",
+        "returnedValue": 1.0000000000000002,
+        "displayedResult": "1",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "todeg",
+        "expression": "todeg(pi)",
+        "returnedValue": 180,
+        "displayedResult": "180",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "torad",
+        "expression": "torad(180)",
+        "returnedValue": 3.141592653589793,
+        "displayedResult": "3.14159265359",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "dms",
+        "expression": "dms(-30, 15, 30)",
+        "returnedValue": -30.258333333333333,
+        "displayedResult": "-30.2583333333",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "atan2",
+        "expression": "atan2(1, -1)",
+        "returnedValue": 135,
+        "displayedResult": "135",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "sinh",
+        "expression": "sinh(1)",
+        "returnedValue": 1.1752011936438014,
+        "displayedResult": "1.17520119364",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "cosh",
+        "expression": "cosh(1)",
+        "returnedValue": 1.5430806348152437,
+        "displayedResult": "1.54308063482",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "tanh",
+        "expression": "tanh(1)",
+        "returnedValue": 0.7615941559557649,
+        "displayedResult": "0.761594155956",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "asinh",
+        "expression": "asinh(1)",
+        "returnedValue": 0.881373587019543,
+        "displayedResult": "0.88137358702",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "acosh",
+        "expression": "acosh(1)",
+        "returnedValue": 0,
+        "displayedResult": "0",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "atanh",
+        "expression": "atanh(0.5)",
+        "returnedValue": 0.5493061443340549,
+        "displayedResult": "0.549306144334",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "sqrt",
+        "expression": "sqrt(1)",
+        "returnedValue": 1,
+        "displayedResult": "1",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "cbrt",
+        "expression": "cbrt(1)",
+        "returnedValue": 1,
+        "displayedResult": "1",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "abs",
+        "expression": "abs(1)",
+        "returnedValue": 1,
+        "displayedResult": "1",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "exp",
+        "expression": "exp(1)",
+        "returnedValue": 2.718281828459045,
+        "displayedResult": "2.71828182846",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "floor",
+        "expression": "floor(1)",
+        "returnedValue": 1,
+        "displayedResult": "1",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "ceil",
+        "expression": "ceil(1)",
+        "returnedValue": 1,
+        "displayedResult": "1",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "round",
+        "expression": "round(1)",
+        "returnedValue": 1,
+        "displayedResult": "1",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "ln",
+        "expression": "ln(e)",
+        "returnedValue": 1,
+        "displayedResult": "1",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "log",
+        "expression": "log(8, 2)",
+        "returnedValue": 3,
+        "displayedResult": "3",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "factorial",
+        "expression": "factorial(5)",
+        "returnedValue": 120,
+        "displayedResult": "120",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "ncr",
+        "expression": "ncr(5, 2)",
+        "returnedValue": 10,
+        "displayedResult": "10",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "npr",
+        "expression": "npr(5, 2)",
+        "returnedValue": 20,
+        "displayedResult": "20",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "min",
+        "expression": "min(1, 2, 3)",
+        "returnedValue": 1,
+        "displayedResult": "1",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "max",
+        "expression": "max(1, 2, 3)",
+        "returnedValue": 3,
+        "displayedResult": "3",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "sum",
+        "expression": "sum(1, 2, 3)",
+        "returnedValue": 6,
+        "displayedResult": "6",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "mean",
+        "expression": "mean(1, 2, 3)",
+        "returnedValue": 2,
+        "displayedResult": "2",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "hypot",
+        "expression": "hypot(1, 2, 3)",
+        "returnedValue": 3.741657386773941,
+        "displayedResult": "3.74165738677",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "det",
+        "expression": "det([[1,2],[3,4]])",
+        "returnedValue": -2,
+        "displayedResult": "-2",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "inverse",
+        "expression": "inverse([[1,2],[3,4]])",
+        "returnedValue": [
+          [
+            -1.9999999999999996,
+            0.9999999999999998
+          ],
+          [
+            1.4999999999999998,
+            -0.49999999999999994
+          ]
+        ],
+        "displayedResult": "[[-2, 1], [1.5, -0.5]]",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "transpose",
+        "expression": "transpose([[1,2],[3,4]])",
+        "returnedValue": [
+          [
+            1,
+            3
+          ],
+          [
+            2,
+            4
+          ]
+        ],
+        "displayedResult": "[[1, 3], [2, 4]]",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "dot",
+        "expression": "dot([1,2], [3,4])",
+        "returnedValue": 11,
+        "displayedResult": "11",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "norm",
+        "expression": "norm([3,4])",
+        "returnedValue": 5,
+        "displayedResult": "5",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "and",
+        "expression": "and(0b1010, 0b1100)",
+        "returnedValue": 8,
+        "displayedResult": "8",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "or",
+        "expression": "or(0b1010, 0b1100)",
+        "returnedValue": 14,
+        "displayedResult": "14",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "xor",
+        "expression": "xor(0b1010, 0b1100)",
+        "returnedValue": 6,
+        "displayedResult": "6",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "not",
+        "expression": "not(0)",
+        "returnedValue": -1,
+        "displayedResult": "-1",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "shl",
+        "expression": "shl(8, 2)",
+        "returnedValue": 32,
+        "displayedResult": "32",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      },
+      {
+        "function": "shr",
+        "expression": "shr(8, 2)",
+        "returnedValue": 2,
+        "displayedResult": "2",
+        "displayedError": false,
+        "loggedExactlyOnce": true
+      }
+    ],
+    "scope": "Every registry example through connected component calculate(); display, one history entry per run, export and reload verified. Independent engine tests assess numerical correctness."
+  }
+}
