@@ -1,0 +1,38 @@
+{
+  "name": "extreme-calculator",
+  "version": "1.0.0",
+  "description": "A compact, dependency-free scientific graphing calculator and embeddable web component",
+  "type": "module",
+  "license": "MIT",
+  "main": "engine.js",
+  "exports": {
+    ".": {
+      "types": "./index.d.ts",
+      "import": "./engine.js"
+    },
+    "./element": {
+      "types": "./calculator.d.ts",
+      "import": "./calculator.js"
+    }
+  },
+  "files": [
+    "engine.js",
+    "calculator.js",
+    "README.md",
+    "LICENSE",
+    "index.d.ts",
+    "calculator.d.ts",
+    "dist/extreme-calculator.js",
+    "dist/extreme-calculator.html"
+  ],
+  "scripts": {
+    "start": "node scripts/serve.mjs",
+    "test": "node --test engine.test.js",
+    "build": "node scripts/build.mjs",
+    "test:browser": "node browser.test.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "types": "index.d.ts"
+}

@@ -1,0 +1,422 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#f5f4ef"><meta name="description" content="A private, portable scientific calculator. Graph functions, work with angles, matrices and binary logic.">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns=%27http://www.w3.org/2000/svg%27 viewBox=%270 0 32 32%27%3E%3Crect width=%2732%27 height=%2732%27 rx=%278%27 fill=%27%23285743%27/%3E%3Ctext x=%278%27 y=%2724%27 font-size=%2728%27 fill=%27%23fffefb%27%3Ee%3C/text%3E%3C/svg%3E">
+<title>Extreme — a little space for big math</title>
+<style>*{box-sizing:border-box}body{margin:0;background:#f5f4ef;color:#263d38;font-family:Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}.masthead{height:90px;max-width:1440px;margin:auto;padding:0 5%;display:flex;align-items:center;justify-content:space-between;border-bottom:1px solid #dedfd6}.wordmark{text-decoration:none;color:inherit;display:flex;align-items:center;gap:12px;font-size:15px;letter-spacing:2px;font-weight:800}.mark{font-family:Georgia,serif;display:inline-flex;align-items:center;justify-content:center;background:#244f43;color:#f6f7e7;width:34px;height:34px;border-radius:9px;font-size:29px;font-weight:400;letter-spacing:-3px;padding-right:4px}.mark span{font-size:20px}.tag{font-size:10px;letter-spacing:1.7px;font-weight:500;margin-left:4px;color:#7d8980}.local{font-size:10px;letter-spacing:1.3px;color:#748276;display:flex;gap:8px;align-items:center}.local i{width:6px;height:6px;background:#648b52;border-radius:50%}main{max-width:1320px;margin:auto;padding:44px 4% 0}.intro{display:flex;justify-content:space-between;align-items:center;margin:0 0 32px}.eyebrow{font-size:10px;letter-spacing:1.8px;font-weight:600;color:#7a8679;margin:0 0 13px}h1{font-size:clamp(26px,3.4vw,42px);letter-spacing:-1.5px;font-weight:500;margin:0}h1 em{font-family:Georgia,serif;font-weight:400;color:#52735b}.subtitle{font-size:13px;color:#7b837b;margin:13px 0 0}.edition{font-size:9px;line-height:1.9;letter-spacing:1.4px;color:#8d9288;text-align:right}footer{display:flex;justify-content:space-between;gap:16px;padding:24px 0;font-size:11px;color:#878c80}footer span+span{font-size:8px;letter-spacing:1.1px}footer b{padding:0 9px;font-weight:400}@media(max-width:700px){.masthead{height:66px;padding:0 5%}.tag,.edition,.local{display:none}main{padding:26px 12px 0}.intro{padding:0 6px;margin-bottom:24px}.subtitle{font-size:12px;line-height:1.6}footer{flex-direction:column;align-items:center;font-size:10px;padding:20px 0}h1{letter-spacing:-.8px}}
+</style><script type="module">/** Dependency-free calculator. All parsing and evaluation is bounded; no code execution. */
+const LIMITS = Object.freeze({ length: 16384, tokens: 2048, depth: 64, dimension: 16, work: 100000 });
+const fail = message => { throw new Error(message); };
+const finite = value => {
+  if (typeof value !== 'number' || !Number.isFinite(value)) fail('Expected a finite real number (domain error or overflow)');
+  // Preserve signed zero so dms(-0, minutes, seconds) can express negative angles.
+  return value;
+};
+const scalar = value => typeof value === 'number' ? finite(value) : fail('Expected a scalar number');
+const integer = value => Number.isSafeInteger(scalar(value)) ? value : fail('Expected a safe integer');
+const positive = value => scalar(value) > 0 ? value : fail('Expected a positive number');
+const nonnegative = value => scalar(value) >= 0 ? value : fail('Expected a nonnegative number');
+const isArray = Array.isArray;
+function shape(value) {
+  if (!isArray(value)) { scalar(value); return []; }
+  if (!value.length || value.length > LIMITS.dimension) fail('Arrays must contain 1–16 entries per dimension');
+  if (!isArray(value[0])) {
+    for (const entry of value) scalar(entry);
+    return [value.length];
+  }
+  const width = value[0].length;
+  if (!width || width > LIMITS.dimension) fail('Matrices must have 1–16 columns');
+  for (const row of value) {
+    if (!isArray(row) || row.length !== width) fail('Expected a rectangular matrix');
+    for (const entry of row) scalar(entry);
+  }
+  return [value.length, width];
+}
+function matrix(value, square = false) {
+  const s = shape(value);
+  if (s.length !== 2 || (square && s[0] !== s[1])) fail(square ? 'Expected a square matrix' : 'Expected a matrix');
+  return s;
+}
+function vector(value) {
+  if (shape(value).length !== 1) fail('Expected a vector');
+  return value;
+}
+function map(value, fn) { return isArray(value) ? value.map(v => map(v, fn)) : finite(fn(value)); }
+function zip(a, b, fn) {
+  if (JSON.stringify(shape(a)) !== JSON.stringify(shape(b))) fail('Array dimensions must match');
+  const walk = (x, y) => isArray(x) ? x.map((v, i) => walk(v, y[i])) : finite(fn(x, y));
+  return walk(a, b);
+}
+function product(a, b, ctx) {
+  if (!isArray(a)) return map(b, v => scalar(a) * v);
+  if (!isArray(b)) return map(a, v => v * scalar(b));
+  const [m, n] = matrix(a), [p, q] = matrix(b);
+  if (n !== p) fail('Matrix multiplication dimensions must match');
+  return Array.from({ length: m }, (_, i) => Array.from({ length: q }, (_, j) => {
+    let total = 0;
+    for (let k = 0; k < n; k++) { ctx.spend(); total = finite(total + finite(a[i][k] * b[k][j])); }
+    return total;
+  }));
+}
+function elimination(value, invert, ctx) {
+  const [n] = matrix(value, true);
+  const a = value.map(row => row.slice());
+  const identity = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => +(i === j)));
+  let determinant = 1;
+  const scale = Math.max(...a.flat().map(Math.abs));
+  for (let col = 0; col < n; col++) {
+    let pivot = col;
+    for (let row = col + 1; row < n; row++) if (Math.abs(a[row][col]) > Math.abs(a[pivot][col])) pivot = row;
+    if (a[pivot][col] === 0 || (invert && Math.abs(a[pivot][col]) <= Number.EPSILON * n * scale)) {
+      if (invert) fail('Matrix is singular or numerically ill-conditioned');
+      return 0;
+    }
+    if (pivot !== col) {
+      [a[pivot], a[col]] = [a[col], a[pivot]];
+      [identity[pivot], identity[col]] = [identity[col], identity[pivot]];
+      determinant = -determinant;
+    }
+    const divisor = a[col][col];
+    if (!invert) determinant = finite(determinant * divisor);
+    if (invert) {
+      for (let j = 0; j < n; j++) { ctx.spend(); a[col][j] = finite(a[col][j] / divisor); identity[col][j] = finite(identity[col][j] / divisor); }
+    }
+    for (let row = invert ? 0 : col + 1; row < n; row++) {
+      if (row === col) continue;
+      const factor = invert ? a[row][col] : finite(a[row][col] / divisor);
+      for (let j = invert ? 0 : col + 1; j < n; j++) {
+        ctx.spend();
+        a[row][j] = finite(a[row][j] - finite(factor * a[col][j]));
+        if (invert) identity[row][j] = finite(identity[row][j] - finite(factor * identity[col][j]));
+      }
+      a[row][col] = 0;
+    }
+  }
+  return invert ? identity : determinant;
+}
+function factorial(value) {
+  const n = integer(nonnegative(value));
+  if (n > 170) fail('Factorial exceeds the finite number range');
+  let result = 1;
+  for (let i = 2; i <= n; i++) result = finite(result * i);
+  return result;
+}
+function combinations(n, r, permute, ctx) {
+  integer(nonnegative(n)); integer(nonnegative(r));
+  if (r > n) fail('Require 0 <= r <= n');
+  if (!permute) r = Math.min(r, n - r);
+  if (r > 1000) fail('Combination/permutation work limit exceeded');
+  let result = 1;
+  for (let i = 1; i <= r; i++) { ctx.spend(); result = finite(result * (permute ? n - i + 1 : (n - r + i) / i)); }
+  return Number.isSafeInteger(Math.round(result)) ? Math.round(result) : result;
+}
+const registry = Object.create(null);
+function define(name, syntax, description, example, min, max, run) {
+  registry[name] = { name, syntax, description, example, min, max, run };
+}
+const unary = (name, description, example, fn) => define(name, `${name}(x)`, description, example, 1, 1, ([x], ctx) => fn(scalar(x), ctx));
+const trigNames = { sin: 'Sine', cos: 'Cosine', tan: 'Tangent' };
+for (const name of ['sin', 'cos', 'tan']) unary(name, `${trigNames[name]} of an angle in the selected unit.`, `${name}(45)`, (x, ctx) => {
+  const radians = finite(x * ctx.toRadians);
+  if (name === 'tan' && Math.abs(Math.cos(radians)) < 1e-14) fail('Tangent is undefined at this angle');
+  return Math[name](radians);
+});
+for (const name of ['asin', 'acos', 'atan']) unary(name, `Inverse ${trigNames[name.slice(1)].toLowerCase()}; returns the principal angle in the selected unit${name === 'atan' ? '.' : '; input from -1 to 1.'}`, `${name}(0.5)`, (x, ctx) => Math[name](x) / ctx.toRadians);
+for (const [name, description] of Object.entries({ sec: 'Secant (1/cos)', csc: 'Cosecant (1/sin)', cot: 'Cotangent (cos/sin)' })) {
+  unary(name, `${description} in the selected angle unit; rejects poles (denominator magnitude below 1e-14).`, `${name}(45)`, (x, ctx) => {
+    const radians = finite(x * ctx.toRadians);
+    const denominator = name === 'sec' ? Math.cos(radians) : Math.sin(radians);
+    if (Math.abs(denominator) < 1e-14) fail(`${name} is undefined at this angle`);
+    return (name === 'cot' ? Math.cos(radians) : 1) / denominator;
+  });
+}
+unary('todeg', 'Convert radians to degrees, independent of angle mode.', 'todeg(pi)', x => x * (180 / Math.PI));
+unary('torad', 'Convert degrees to radians, independent of angle mode.', 'torad(180)', x => x * (Math.PI / 180));
+define('dms', 'dms(degrees, minutes, seconds)', 'Convert to decimal degrees; the degrees sign (including -0) applies to the entire angle. Minutes and seconds must be from 0 inclusive to 60 exclusive; independent of angle mode.', 'dms(-30, 15, 30)', 3, 3, ([degrees, minutes, seconds]) => {
+  scalar(degrees); scalar(minutes); scalar(seconds);
+  if (minutes < 0 || minutes >= 60 || seconds < 0 || seconds >= 60) fail('DMS minutes and seconds must satisfy 0 <= value < 60');
+  const sign = degrees < 0 || Object.is(degrees, -0) ? -1 : 1;
+  return sign * finite(Math.abs(degrees) + minutes / 60 + seconds / 3600);
+});
+define('atan2', 'atan2(y, x)', 'Quadrant-aware inverse tangent in the selected angle unit; (0,0) is undefined.', 'atan2(1, -1)', 2, 2, ([y, x], ctx) => {
+  scalar(y); scalar(x);
+  if (x === 0 && y === 0) fail('atan2(0, 0) is undefined');
+  return Math.atan2(y, x) / ctx.toRadians;
+});
+const mathDescriptions = {
+  sinh: 'Hyperbolic sine, (exp(x) - exp(-x))/2; independent of angle mode.',
+  cosh: 'Hyperbolic cosine, (exp(x) + exp(-x))/2; independent of angle mode.',
+  tanh: 'Hyperbolic tangent, sinh(x)/cosh(x); independent of angle mode.',
+  asinh: 'Inverse hyperbolic sine; accepts any real number, independent of angle mode.',
+  acosh: 'Inverse hyperbolic cosine; x >= 1, independent of angle mode.',
+  atanh: 'Inverse hyperbolic tangent; -1 < x < 1, independent of angle mode.',
+  sqrt: 'Nonnegative square root; x >= 0.',
+  cbrt: 'Real cube root, including negative inputs.',
+  abs: 'Absolute value: distance from zero.',
+  exp: 'Exponential: Euler’s number e raised to x.',
+  floor: 'Round down to the nearest integer, toward negative infinity.',
+  ceil: 'Round up to the nearest integer, toward positive infinity.',
+  round: 'Round to the nearest integer; exact halves round toward positive infinity.',
+};
+for (const [name, description] of Object.entries(mathDescriptions)) {
+  unary(name, description, `${name}(${name === 'atanh' ? '0.5' : '1'})`, Math[name]);
+}
+unary('ln', 'Natural logarithm; x > 0.', 'ln(e)', x => Math.log(positive(x)));
+define('log', 'log(x, base=10)', 'Logarithm; x and base positive, base != 1.', 'log(8, 2)', 1, 2, ([x, base = 10]) => {
+  positive(x); positive(base);
+  if (base === 1) fail('Logarithm base must not equal 1');
+  return Math.log(x) / Math.log(base);
+});
+unary('factorial', 'Factorial of an integer from 0 through 170; also x!.', 'factorial(5)', factorial);
+for (const name of ['ncr', 'npr']) define(name, `${name}(n, r)`, `Number of ${name === 'ncr' ? 'combinations' : 'permutations'}; integers 0 <= r <= n.`, `${name}(5, 2)`, 2, 2, ([n, r], ctx) => combinations(n, r, name === 'npr', ctx));
+function items(args) {
+  const values = args.length === 1 && isArray(args[0]) ? args[0].flat() : args;
+  if (!values.length) fail('Expected at least one number');
+  values.forEach(scalar);
+  return values;
+}
+const aggregateDescriptions = { min: 'Smallest value', max: 'Largest value', sum: 'Total', mean: 'Arithmetic average', hypot: 'Square root of the sum of squares' };
+for (const name of ['min', 'max', 'sum', 'mean', 'hypot']) define(name, `${name}(x, ...) or ${name}([values])`, `${aggregateDescriptions[name]} of numbers or all entries of one array.`, `${name}(1, 2, 3)`, 1, 256, args => {
+  const values = items(args);
+  if (name === 'min' || name === 'max' || name === 'hypot') return Math[name](...values);
+  return values.reduce((a, b) => finite(a + (name === 'mean' ? b / values.length : b)), 0);
+});
+define('det', 'det(matrix)', 'Determinant of a square matrix, using pivoted elimination.', 'det([[1,2],[3,4]])', 1, 1, ([a], ctx) => elimination(a, false, ctx));
+define('inverse', 'inverse(matrix)', 'Inverse of a square matrix; rejects singular or ill-conditioned matrices.', 'inverse([[1,2],[3,4]])', 1, 1, ([a], ctx) => elimination(a, true, ctx));
+define('transpose', 'transpose(matrix)', 'Swap matrix rows and columns.', 'transpose([[1,2],[3,4]])', 1, 1, ([a]) => {
+  const [m, n] = matrix(a);
+  return Array.from({ length: n }, (_, j) => Array.from({ length: m }, (_, i) => a[i][j]));
+});
+define('dot', 'dot(vector, vector)', 'Dot product of equal-length vectors.', 'dot([1,2], [3,4])', 2, 2, ([a, b]) => {
+  vector(a); vector(b);
+  if (a.length !== b.length) fail('Vector dimensions must match');
+  return a.reduce((total, v, i) => finite(total + finite(v * b[i])), 0);
+});
+define('norm', 'norm(array)', 'Euclidean vector norm or Frobenius matrix norm.', 'norm([3,4])', 1, 1, ([a]) => {
+  if (!shape(a).length) fail('Expected a vector or matrix');
+  return Math.hypot(...a.flat());
+});
+function bits(value) {
+  integer(value);
+  if (value < -2147483648 || value > 4294967295) fail('Bitwise input must fit 32 bits');
+  return value | 0;
+}
+for (const [name, fn] of Object.entries({ and: (a, b) => a & b, or: (a, b) => a | b, xor: (a, b) => a ^ b })) {
+  define(name, `${name}(a, b)`, `32-bit bitwise ${name.toUpperCase()}; result is a signed integer.`, `${name}(0b1010, 0b1100)`, 2, 2, ([a, b]) => fn(bits(a), bits(b)));
+}
+unary('not', '32-bit bitwise complement; result is a signed integer.', 'not(0)', x => ~bits(x));
+for (const [name, fn] of Object.entries({ shl: (a, n) => a << n, shr: (a, n) => a >> n })) {
+  define(name, `${name}(x, count)`, `32-bit ${name === 'shr' ? 'sign-preserving right' : 'left'} shift, count 0–31.`, `${name}(8, 2)`, 2, 2, ([x, n]) => {
+    const a = bits(x); integer(n);
+    if (n < 0 || n > 31) fail('Shift count must be from 0 through 31');
+    return fn(a, n);
+  });
+}
+/** Discoverable documentation for every callable function. */
+export const FUNCTIONS = Object.freeze(Object.values(registry).map(({ name, syntax, description, example }) => Object.freeze({ name, syntax, description, example })));
+
+// Small bounded LRU cache avoids rescanning expressions for graph samples.
+const tokenCache = new Map();
+function tokenize(expression) {
+  if (typeof expression !== 'string' || !expression.trim()) fail('Expression must be a nonempty string');
+  if (expression.length > LIMITS.length) fail('Expression length limit exceeded');
+  if (tokenCache.has(expression)) {
+    const cached = tokenCache.get(expression);
+    tokenCache.delete(expression); tokenCache.set(expression, cached);
+    return cached;
+  }
+  const tokens = [];
+  let i = 0;
+  while (i < expression.length) {
+    const c = expression[i];
+    if (/\s/.test(c)) { i++; continue; }
+    if (tokens.length >= LIMITS.tokens) fail('Token limit exceeded');
+    const rest = expression.slice(i);
+    let match;
+    if (/^0[bBxX]/.test(rest)) {
+      const hex = /^0[xX]/.test(rest);
+      match = (hex ? /^0[xX][0-9a-fA-F]+/ : /^0[bB][01]+/).exec(rest);
+      if (!match) fail(`Invalid ${hex ? 'hexadecimal' : 'binary'} literal at ${i}`);
+      const end = i + match[0].length;
+      if (/[\w.]/.test(expression[end] || '')) fail(`Invalid ${hex ? 'hexadecimal' : 'binary'} literal at ${i}`);
+      tokens.push({ type: 'number', value: finite(Number(match[0])) }); i = end;
+    } else if ((match = /^(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?/.exec(rest))) {
+      tokens.push({ type: 'number', value: finite(Number(match[0])) }); i += match[0].length;
+      if (expression[i] === '.') fail(`Invalid number at ${i}`);
+    } else if ((match = /^[A-Za-z_][A-Za-z_0-9]*/.exec(rest))) {
+      tokens.push({ type: 'identifier', value: match[0] }); i += match[0].length;
+    } else if ('+-*/%^!(),[]'.includes(c)) { tokens.push({ type: c, value: c }); i++; }
+    else fail(`Unexpected character '${c}' at ${i}`);
+  }
+  tokens.push({ type: 'end' });
+  if (tokenCache.size >= 32) tokenCache.delete(tokenCache.keys().next().value);
+  tokenCache.set(expression, tokens);
+  return tokens;
+}
+
+/** Evaluate a real-valued expression. Default angle mode: radians. x is a finite scalar; ans may also be a vector or matrix. */
+export function evaluate(expression, options = {}) {
+  if (!options || typeof options !== 'object' || isArray(options)) fail('Options must be an object');
+  const { angle = 'rad', variables = {} } = options;
+  if (!['deg', 'rad', 'grad'].includes(angle)) fail('Angle mode must be deg, rad, or grad');
+  if (!variables || typeof variables !== 'object' || isArray(variables)) fail('Variables must be an object');
+  // Copy own data properties only. Do not invoke user-defined getters.
+  const scope = Object.create(null);
+  for (const name of ['x', 'ans']) {
+    const descriptor = Object.getOwnPropertyDescriptor(variables, name);
+    if (descriptor) {
+      if (!('value' in descriptor)) fail('Variable getters are not supported');
+      if (name === 'ans') { shape(descriptor.value); scope[name] = map(descriptor.value, v => v); }
+      else scope[name] = scalar(descriptor.value);
+    }
+  }
+  const tokens = tokenize(expression);
+  let pos = 0, depth = 0, work = 0;
+  const ctx = { toRadians: angle === 'deg' ? Math.PI / 180 : angle === 'grad' ? Math.PI / 200 : 1,
+    spend() { if (++work > LIMITS.work) fail('Evaluation work limit exceeded'); } };
+  const peek = () => tokens[pos].type;
+  const take = type => { if (peek() === type) { pos++; return true; } return false; };
+  const expect = type => { if (!take(type)) fail(`Expected '${type}' at token ${pos + 1}`); };
+  function nested(fn) {
+    if (++depth > LIMITS.depth) fail('Expression nesting limit exceeded');
+    try { ctx.spend(); return fn(); } finally { depth--; }
+  }
+  function add() {
+    let a = multiply();
+    while (peek() === '+' || peek() === '-') {
+      const op = tokens[pos++].type, b = multiply(); ctx.spend();
+      a = zip(a, b, op === '+' ? (x, y) => x + y : (x, y) => x - y);
+    }
+    return a;
+  }
+  function multiply() {
+    let a = unaryExpression();
+    while (['*', '/', '%', 'number', 'identifier', '(', '['].includes(peek())) {
+      const explicit = ['*', '/', '%'].includes(peek());
+      const op = explicit ? tokens[pos++].type : '*';
+      const b = unaryExpression(); ctx.spend();
+      if (op === '*') a = product(a, b, ctx);
+      else {
+        scalar(b);
+        if (b === 0) fail('Division by zero');
+        a = op === '/' ? map(a, v => v / b) : finite(scalar(a) % b);
+      }
+    }
+    return a;
+  }
+  function unaryExpression() {
+    return nested(() => {
+      if (take('+')) return unaryExpression();
+      if (take('-')) return map(unaryExpression(), x => -x);
+      return power();
+    });
+  }
+  function power() {
+    let a = primary();
+    while (take('!')) { ctx.spend(); a = factorial(a); }
+    if (take('^')) a = finite(scalar(a) ** scalar(unaryExpression()));
+    return a;
+  }
+  function primary() {
+    if (peek() === 'number') return tokens[pos++].value;
+    if (take('(')) { const value = nested(add); expect(')'); return value; }
+    if (take('[')) {
+      const values = [];
+      do {
+        if (values.length >= LIMITS.dimension) fail('Array dimension limit exceeded (16)');
+        values.push(nested(add));
+      } while (take(','));
+      expect(']'); shape(values); return values;
+    }
+    if (peek() === 'identifier') {
+      const name = tokens[pos++].value;
+      if (Object.hasOwn(registry, name)) {
+        expect('(');
+        const args = [];
+        if (peek() !== ')') do {
+          if (args.length >= 256) fail('Function argument limit exceeded');
+          args.push(nested(add));
+        } while (take(','));
+        expect(')');
+        const fn = registry[name];
+        if (args.length < fn.min || args.length > fn.max) fail(`Wrong number of arguments for ${name}`);
+        ctx.spend();
+        const result = fn.run(args, ctx); shape(result); return result;
+      }
+      if (name === 'pi') return Math.PI;
+      if (name === 'e') return Math.E;
+      if (name === 'tau') return 2 * Math.PI;
+      if (Object.hasOwn(scope, name)) return scope[name];
+      fail(`Unknown name '${name}'`);
+    }
+    fail(`Expected a number, function, or parenthesis at token ${pos + 1}`);
+  }
+  const result = add();
+  expect('end'); shape(result);
+  return result;
+}
+
+/** Format scalars, vectors, and matrices with 1–100 significant digits. */
+export function formatValue(value, precision = 12) {
+  if (!Number.isInteger(precision) || precision < 1 || precision > 100) fail('Precision must be an integer from 1 through 100');
+  shape(value);
+  const format = v => isArray(v) ? `[${v.map(format).join(', ')}]` : String(Number(finite(v).toPrecision(precision)));
+  return format(value);
+}
+
+const icons={help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4m0 3v.01"/>',settings:'<path d="m9 3-1 3-3 1v4l-2 1 2 1v4l3 1 1 3h6l1-3 3-1v-4l2-1-2-1V7l-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/>',close:'<path d="m6 6 12 12M6 18 18 6"/>',download:'<path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/>',copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M15 8V4H4v11h4"/>',back:'<path d="m9 5-7 7 7 7h12V5Zm4 4 5 6m0-6-5 6"/>',expand:'<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>'};
+const icon=name=>`<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]||''}</svg>`;
+const css=`
+:host{display:block;--calc-accent:#285743;--calc-bg:#fffefb;--calc-text:#283f38;--calc-muted:#829083;font:13px/1.5 Inter,ui-sans-serif,system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;color:var(--calc-text);color-scheme:light}*{box-sizing:border-box}button,input,select{font:inherit}button{cursor:pointer;color:inherit}button:disabled{cursor:default;opacity:.5}button,input,select{outline-offset:3px}button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible{outline:2px solid #508d67}button{border:0;background:transparent}button:hover{filter:brightness(.95)}.shell{background:var(--calc-bg);border:1px solid #dddfd4;border-radius:18px;box-shadow:0 10px 35px #35473606;overflow:hidden}.bar{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:15px 22px;border-bottom:1px solid #e5e7de}.tabs{display:flex;gap:6px;flex-wrap:wrap}.tab{padding:8px 13px;border-radius:7px;font-size:11px;color:#788578}.tab[aria-selected=true]{background:#eaf0e3;color:#285743;font-weight:650}.tools{display:flex;gap:5px}.icon{width:32px;height:32px;display:inline-flex;justify-content:center;align-items:center;color:#7a887c;border-radius:6px}.icon:hover{background:#edf1e7}.workspace{display:grid;grid-template-columns:minmax(0,1.12fr) minmax(0,1fr)}.primary{padding:26px;border-right:1px solid #e5e7de;min-width:0}.section-label{display:flex;align-items:center;justify-content:space-between;color:#81907e;font-size:9px;font-weight:600;letter-spacing:1.6px}.angle-control{display:flex;background:#f2f3eb;border-radius:5px;padding:3px;letter-spacing:0}.angle-control button{font-size:9px;padding:3px 8px;border-radius:3px;color:#929887}.angle-control button[aria-pressed=true]{background:white;color:#315d43;box-shadow:0 1px 4px #23332210}.display{padding:25px 0 20px;min-height:164px;border-bottom:1px solid #e9ebe1}.expression{display:flex;align-items:center;gap:8px}.expression span{font-family:Georgia,serif;font-style:italic;font-size:20px;color:#a3ad99}.expression input{width:100%;background:transparent;border:0;color:#526554;font:19px/1.7 ui-monospace,SFMono-Regular,Consolas,monospace;min-width:0}.expression input::placeholder{color:#b0b5a7}.answer{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:13px}.result{font:400 clamp(27px,3vw,42px)/1.25 ui-monospace,SFMono-Regular,Consolas,monospace;letter-spacing:-1.5px;overflow-wrap:anywhere;white-space:pre-wrap;max-height:180px;overflow:auto}.result.error{font-size:15px;line-height:1.5;color:#a14b3e;letter-spacing:0}.answer-meta{font-size:9px;color:#919b87;margin-top:9px;min-height:14px}.keypad{display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:7px;margin-top:19px}.key{min-height:43px;border-radius:7px;font-size:16px;background:#f4f5ef;border:1px solid #eceee4}.key.science{font-size:12px;background:#fffefa;color:#687a67}.key.operator{color:#3f654a;background:#eaf0e3;border-color:#e3eadb}.key.clear{color:#a16947;background:#f5f0e6;border-color:#eee8db;font-size:12px}.key.equals{background:var(--calc-accent);color:#fff;border-color:var(--calc-accent)}.key .tiny{font-size:11px}.hint{font-size:10px;color:#8c9685;margin-top:14px;display:flex;justify-content:space-between;gap:12px}.hint kbd{font:9px inherit;border:1px solid #dfe3d5;border-radius:3px;padding:1px 4px}.quick{border-top:1px solid #e6e9de;margin-top:21px;padding-top:17px}.quick-title{font-size:9px;color:#83917c;letter-spacing:1.3px;margin-bottom:10px}.chips{display:flex;flex-wrap:wrap;gap:6px}.chip{border:1px solid #e2e6da;border-radius:6px;padding:6px 9px;font-size:10px;color:#6b7c62;background:#fcfdf7}.guide{padding:13px 14px;background:#f5f6ee;border-radius:8px;font-size:11px;color:#748069;margin-top:16px}.guide strong{color:#546c4d;font-weight:600}.guide p{margin:4px 0 0}.right{min-width:0}.graph-panel{padding:24px 23px 17px;border-bottom:1px solid #e5e7de}.graph-heading{display:flex;justify-content:space-between;align-items:center;margin-bottom:12px}.graph-title{font-size:10px;color:#7e8c77;letter-spacing:1.4px}.legend{max-width:65%;min-width:0;font-size:10px;color:#7e8c77;display:flex;align-items:center;gap:7px}.legend span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.dot{width:6px;height:6px;display:inline-block;border-radius:50%;background:#789263}.plot-wrap{position:relative;background:#fafbf6;border:1px solid #e6eadd;border-radius:9px;overflow:hidden;height:240px}.plot-wrap canvas{display:block;width:100%;height:100%;touch-action:none}.graph-controls{position:absolute;right:10px;top:10px;display:flex;gap:2px;background:#fffffff0;border:1px solid #e5e8dd;border-radius:5px;padding:2px}.graph-controls button{font-size:13px;min-width:25px;height:25px}.graph-footer{display:flex;justify-content:space-between;gap:8px;color:#8d9984;font-size:9px;margin-top:10px}.graph-error{overflow-wrap:anywhere;color:#a14b3e;font-size:11px;min-height:17px;margin-top:6px}.history{padding:20px 23px}.history-title{display:flex;align-items:center;justify-content:space-between;gap:6px}.history-title h2{font-size:10px;font-weight:500;color:#7e8c77;letter-spacing:1.4px;margin:0}.count{color:#9aa38f;margin-left:7px;font-size:9px;letter-spacing:0}.history-actions{display:flex;align-items:center;gap:2px}.text-button{font-size:10px;color:#8b947f;padding:6px}.history-list{max-height:218px;overflow:auto;margin-top:11px;scrollbar-width:thin;scrollbar-color:#d6dfcb transparent}.empty{padding:23px 0;color:#a3ab98;font-size:11px}.entry{display:flex;gap:10px;align-items:center;justify-content:space-between;border-bottom:1px solid #edf0e5;padding:10px 2px}.entry button{text-align:left;min-width:0;flex:1;padding:0}.entry-expression{font:11px ui-monospace,SFMono-Regular,Consolas,monospace;color:#7d8b74;overflow-wrap:anywhere}.entry-result{font:15px ui-monospace,SFMono-Regular,Consolas,monospace;margin-top:4px;overflow-wrap:anywhere;white-space:pre-wrap}.entry-result.bad{color:#a45d4b;font:11px inherit}.entry time{color:#a2aa98;font-size:9px;white-space:nowrap}.entry-meta{color:#a3aa97;font-size:8px;margin-top:4px}.statusbar{display:flex;justify-content:space-between;gap:10px;padding:11px 23px;background:#f8f9f2;border-top:1px solid #e5e7de;color:#8b9881;font-size:9px}.statusbar span:first-child{display:flex;align-items:center;gap:7px}.statusbar .dot{width:4px;height:4px}.special{margin-top:18px}.special[hidden],[hidden]{display:none!important}.special label{font-size:10px;color:#7d8b73;display:block;margin-bottom:6px}.field{border:1px solid #dce3d2;border-radius:6px;padding:9px;background:#fffefb;color:#3e5c46;min-width:0;width:100%;font:12px ui-monospace,SFMono-Regular,Consolas,monospace}.curve-row{display:flex;align-items:center;gap:8px;margin:8px 0}.curve-row span{font:italic 15px Georgia;color:#729263}.curve-row input{flex:1}.bounds{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}.bounds label{margin:0}.bounds input{margin-top:4px}.primary-button{background:var(--calc-accent);color:#fff;border-radius:7px;padding:10px 16px;font-size:11px;margin-top:14px}.mode-intro{color:#77846f;font-size:11px;line-height:1.7;margin:12px 0}.logic-result{font:12px/1.9 ui-monospace,monospace;margin-top:12px;color:#5e7556;overflow-wrap:anywhere}.modal{width:min(620px,calc(100% - 24px));max-height:85vh;border:1px solid #dce3d1;border-radius:14px;padding:0;background:#fffefb;color:#2a4335;box-shadow:0 20px 80px #1c332530}.modal::backdrop{background:#24392960;backdrop-filter:blur(3px)}.modal-head{display:flex;justify-content:space-between;align-items:center;padding:19px 23px;border-bottom:1px solid #e4e8da}.modal-head h2{font-size:17px;font-weight:500;margin:0}.modal-body{padding:20px 23px;overflow:auto;max-height:calc(85vh - 75px)}.modal-body p{font-size:12px;color:#7a866e;line-height:1.7;margin:0 0 14px}.modal-body h3{font-size:12px;font-weight:600;margin:20px 0 8px}.help-list{display:grid;gap:8px;margin-top:16px}.help-card{padding:12px;background:#f4f6ed;border-radius:7px}.help-card code{color:#3e6548;font-size:12px;overflow-wrap:anywhere}.help-card p{font-size:11px;margin:5px 0}.help-card button{font:11px ui-monospace,monospace;border:1px solid #dce5cf;border-radius:4px;padding:4px 7px;overflow-wrap:anywhere;text-align:left}.setting{display:flex;justify-content:space-between;align-items:center;gap:20px;padding:14px 0;border-bottom:1px solid #e8ecdf}.setting label{font-size:12px}.setting small{display:block;color:#8c967f;font-size:10px;margin-top:4px}.setting select{border:1px solid #dde4d1;border-radius:5px;padding:7px;color:#416349;background:#fffefb}.notice{font-size:10px;color:#8e6745;margin-top:12px}.preview-caption{font-size:10px;color:#8b977f;padding-top:8px}.walkthroughs details{border-bottom:1px solid #e6eadc;padding:9px 0;font-size:12px}.walkthroughs summary{cursor:pointer;color:#4f6f50}.walkthroughs p{margin-top:7px;margin-bottom:2px}.link-button{text-decoration:underline;text-underline-offset:3px;font-size:10px;color:#6a825b;padding:0}.history-list .load{width:100%;margin-top:10px}.no-motion *{scroll-behavior:auto!important}@media(max-width:760px){.bar{padding:12px}.tab{padding:7px 9px;font-size:10px}.primary{padding:20px}.workspace{grid-template-columns:1fr}.primary{border-right:0;border-bottom:1px solid #e5e7de}.graph-panel{padding:20px}.history{padding:18px 20px}.display{min-height:140px}.plot-wrap{height:240px}.statusbar{padding:11px 16px}.result{font-size:34px}.key{min-height:46px}}@media(max-width:380px){.bar{gap:3px;padding:10px 8px}.tabs{gap:0}.tab{padding:7px}.tools{gap:0}.icon{width:28px}.primary{padding:16px}.keypad{gap:5px}.hint{font-size:9px}.statusbar{font-size:8px}.legend{font-size:9px}}
+`;
+
+/** Embeddable calculator. No global styles, runtime libraries, network calls, or executable input. */
+export class ExtremeCalculator extends HTMLElement {
+  constructor(){super();this.attachShadow({mode:'open'});this.angle='deg';this.precision=12;this.mode='calculate';this.ans=0;this.history=[];this.visibleHistory=50;this.curves=['sin(x)','cos(x)'];this.view={xmin:-360,xmax:360,ymin:-1.8,ymax:1.8};this.lastResult=0;this.frame=0;this.saving=true;this.abort=null;}
+  connectedCallback(){if(this.abort)return;this.abort=new AbortController();if(!this.initialized){this.load();this.render();this.initialized=true;}this.bind();this.resize=new ResizeObserver(()=>this.scheduleGraph());this.resize.observe(this.$('canvas'));this.renderHistory();this.scheduleGraph();}
+  disconnectedCallback(){this.abort?.abort();this.abort=null;this.resize?.disconnect();cancelAnimationFrame(this.frame);}
+  $(s){return this.shadowRoot.querySelector(s)}
+  $$(s){return [...this.shadowRoot.querySelectorAll(s)]}
+  get storageKey(){return this.getAttribute('storage-key')}
+  load(){if(!this.storageKey)return;try{const data=JSON.parse(localStorage.getItem(this.storageKey)||'null');if(data&&typeof data==='object'){if(['deg','rad','grad'].includes(data.angle))this.angle=data.angle;if([6,10,12,15].includes(data.precision))this.precision=data.precision;if(Array.isArray(data.history))this.history=data.history.filter(e=>e&&typeof e.expression==='string'&&typeof e.result==='string'&&typeof e.timestamp==='string'&&e.expression.length<=4096&&e.result.length<=20000).map(e=>({expression:e.expression,result:e.result,timestamp:e.timestamp,angle:['deg','rad','grad'].includes(e.angle)?e.angle:'deg',kind:e.kind==='graph'?'graph':'calculation',ok:e.ok===true}));} }catch{this.storageNotice='Saved data could not be loaded. This session still works.'}this.resetView();}
+  save(){if(!this.storageKey)return;try{localStorage.setItem(this.storageKey,JSON.stringify({version:1,angle:this.angle,precision:this.precision,history:this.history}));this.storageNotice='';}catch{this.storageNotice='Storage is full or unavailable. New runs remain in this session; export your log before closing.'}this.updateStorageStatus();}
+  updateStorageStatus(){const node=this.$('#storage-status');if(node)node.textContent=this.storageNotice||(this.storageKey?'History saved on this device':'History kept for this session');}
+  render(){this.shadowRoot.innerHTML=`<style>${css}</style><section class="shell" aria-label="Extreme scientific calculator"><div class="bar"><div class="tabs" role="tablist" aria-label="Calculator mode">${[['calculate','Calculator'],['graph','Graph'],['matrix','Matrices'],['logic','Logic']].map(([key,label])=>`<button class="tab" role="tab" id="tab-${key}" aria-controls="calculator-panel" data-mode="${key}" aria-selected="${key===this.mode}" tabindex="${key===this.mode?0:-1}">${label}</button>`).join('')}</div><div class="tools"><button class="icon" data-dialog="help" aria-label="Open help" title="Help">${icon('help')}</button><button class="icon" data-dialog="settings" aria-label="Open settings" title="Settings">${icon('settings')}</button></div></div><div class="workspace"><section class="primary" id="calculator-panel" role="tabpanel" aria-labelledby="tab-calculate"><div class="section-label"><span id="mode-label">YOUR WORKSPACE</span><div class="angle-control" aria-label="Angle unit">${['deg','rad','grad'].map(a=>`<button data-angle="${a}" aria-pressed="${a===this.angle}" title="${{deg:'Degrees',rad:'Radians',grad:'Gradians'}[a]}">${a.toUpperCase()}</button>`).join('')}</div></div><form id="expression-form"><div class="display"><div class="expression"><span aria-hidden="true">›</span><input id="expression" aria-label="Expression" placeholder="Try sin(30) + 2^3" autocomplete="off" autocapitalize="off" spellcheck="false" maxlength="4096" inputmode="text"></div><div class="answer"><output class="result" id="result" aria-live="polite">0</output><button type="button" class="icon" id="copy" aria-label="Copy result" title="Copy result">${icon('copy')}</button></div><div class="answer-meta" id="answer-meta">A fresh start. What are we solving?</div></div></form><div class="special" id="graph-editor" hidden><p class="mode-intro">Give an expression in <strong>x</strong> a little room to breathe. Plot up to three curves in your current angle unit.</p>${[0,1,2].map(i=>`<label for="curve-${i}" class="curve-row"><span>${['f','g','h'][i]}(x)</span><input id="curve-${i}" class="field" aria-label="Curve ${i+1}" maxlength="512" placeholder="${['sin(x)','cos(x)','x^2 / 100'][i]}"></label>`).join('')}<div class="bounds">${[['xmin','x min'],['xmax','x max'],['ymin','y min'],['ymax','y max']].map(([key,label])=>`<label>${label}<input class="field" id="${key}" aria-label="${label}" type="number" step="any"></label>`).join('')}</div><button class="primary-button" id="draw">Plot curves</button><p class="preview-caption">Drag to pan · + / − to zoom · point at a curve to inspect</p></div><div class="special" id="matrix-editor" hidden><p class="mode-intro">Those boxes of numbers are <strong>matrices</strong>. Square brackets create rows. Try an example, then make it yours.</p><div class="chips">${[['Identity','[[1,0],[0,1]]'],['Determinant','det([[1,2],[3,4]])'],['Inverse','inverse([[1,2],[3,4]])'],['Multiply','[[1,2],[3,4]] * [[2,0],[0,2]]'],['Transpose','transpose([[1,2],[3,4]])']].map(([label,e])=>`<button class="chip" data-example="${e}">${label}</button>`).join('')}</div></div><div class="special" id="logic-editor" hidden><p class="mode-intro">Explore the ones and zeros. Binary starts with <strong>0b</strong>, hexadecimal with <strong>0x</strong>. Logic works on signed 32-bit integers.</p><div class="chips">${[['AND','and(0b1100,0b1010)'],['OR','or(0b1100,0b1010)'],['XOR','xor(0b1100,0b1010)'],['NOT','not(0)'],['Shift left','shl(1,4)']].map(([label,e])=>`<button class="chip" data-example="${e}">${label}</button>`).join('')}</div><div class="logic-result" id="logic-result"></div></div><div class="keypad" aria-label="Calculator keypad">${this.keys()}</div><div class="hint"><span><kbd>enter</kbd> to calculate <span aria-hidden="true">↵</span></span><button class="link-button" data-dialog="help">A little guidance?</button></div><div class="quick"><div class="quick-title">A FEW PLACES TO START</div><div class="chips" id="quick-examples"></div></div><div class="guide"><strong id="guide-title">Every angle covered.</strong><p id="guide-text">Switch between degrees, radians and gradians above. Your trig functions follow along.</p></div></section><aside class="right" aria-label="Graph and calculation history"><section class="graph-panel"><div class="graph-heading"><span class="graph-title">THE BIGGER PICTURE</span><span class="legend"><i class="dot"></i><span id="graph-legend">sin(x) · cos(x)</span></span></div><div class="plot-wrap"><canvas tabindex="0" role="img" aria-label="Function graph. Use arrow keys to pan, plus and minus to zoom."></canvas><div class="graph-controls"><button id="zoom-out" aria-label="Zoom out">−</button><button id="zoom-in" aria-label="Zoom in">+</button><button id="reset-graph" aria-label="Reset graph view" title="Reset view">${icon('expand')}</button></div></div><div class="graph-footer"><span id="graph-range"></span><span id="trace">Drag to explore</span></div><div id="graph-error" class="graph-error" role="status"></div></section><section class="history"><div class="history-title"><h2>YOUR PAPER TRAIL <span class="count" id="history-count">0 runs</span></h2><div class="history-actions"><button class="text-button" id="clear-history">Clear</button><button class="icon" id="export" aria-label="Export calculation log" title="Export complete log">${icon('download')}</button></div></div><div class="history-list" id="history-list"></div></section></aside></div><div class="statusbar"><span><i class="dot"></i><span id="storage-status"></span></span><span id="status" role="status">Ready when you are.</span></div></section>${this.dialogs()}`;this.updateStorageStatus();this.updateExamples();this.syncBounds();this.curves.forEach((c,i)=>this.$('#curve-'+i).value=c);}
+  keys(){return [['sin','sin(','science'],['cos','cos(','science'],['tan','tan(','science'],['(','(','science'],[')',')','science'],['asin','asin(','science'],['acos','acos(','science'],['atan','atan(','science'],['ln','ln(','science'],['log','log(','science'],['√','sqrt(','science'],['xʸ','^','science'],['x²','^2','science'],['π','pi','science'],['e','e','science'],['AC','clear','clear'],['±','negate','operator'],['%','%','operator'],['÷','/','operator'],['⌫','back','operator'],['7','7',''],['8','8',''],['9','9',''],['×','*','operator'],['n!','!','science'],['4','4',''],['5','5',''],['6','6',''],['−','-','operator'],['1/x','reciprocal','science'],['1','1',''],['2','2',''],['3','3',''],['+','+','operator'],['ans','ans','science'],['0','0',''],['.','.',''],[',',',','science'],['|x|','abs(','science'],['=','equals','equals']].map(([label,value,style])=>`<button class="key ${style}" data-key="${value}" aria-label="${({clear:'Clear expression',back:'Backspace',equals:'Calculate',negate:'Negate expression',reciprocal:'Reciprocal expression','%':'Remainder', '^':'Power','!':'Factorial'})[value]||label}" title="${value==='%'?'Remainder: 10 % 3 = 1':label}">${label}</button>`).join('');}
+  dialogs(){return `<dialog class="modal" id="help" aria-labelledby="help-title"><div class="modal-head"><h2 id="help-title">A little guidance.</h2><button class="icon" data-close="help" aria-label="Close help">${icon('close')}</button></div><div class="modal-body"><p>Start with an expression. Press Enter or = to calculate. Click a past calculation to reuse it. Every submitted calculation—including errors—is added to your paper trail.</p><div class="walkthroughs"><details open><summary>Everyday math & shortcuts</summary><p>Use +, −, *, / and ^ for powers. Parentheses set the order. Try (2+3)*4. % is remainder, so 10%3 is 1; a percentage is 50*15/100. ! is factorial. pi, tau, e and ans are built in. Enter calculates; Escape closes menus. Up in an empty expression recalls the latest calculation.</p></details><details><summary>Angles & triangles</summary><p>Choose DEG for degrees, RAD for radians or GRAD for gradians. sin, cos and tan read that unit; asin, acos, atan and atan2 return it. In DEG, atan2(3,4) gives a triangle's angle and hypot(3,4) its hypotenuse. Use torad(180) to convert degrees to radians and todeg(pi) for the reverse. dms(30,15,0) converts 30° 15′ to 30.25°. sec, csc and cot support the selected angle unit too. Trig singularities and invalid domains return helpful errors.</p></details><details><summary>Graphing step by step</summary><p>Open Graph, enter a function using x, set the bounds and choose Plot curves. Up to three curves share the current angle unit. Drag the graph to pan, use +/− to zoom, or focus it and use the arrow keys. Reset restores the default window. Hover or touch to inspect x and the first curve. Graphs are numerical samples: gaps mark invalid values, and very narrow features may need a closer view.</p></details><details><summary>Matrices & vectors</summary><p>Open Matrices and try Identity. [[1,0],[0,1]] is a matrix with two rows. Use * to multiply compatible matrices. det gives a determinant, inverse gives an inverse and transpose swaps rows and columns. dot([1,2],[3,4]) is 11; norm([3,4]) is 5. Dimensions must match; singular matrices cannot be inverted.</p></details><details><summary>Binary logic</summary><p>Open Logic. and(0b1100,0b1010) returns 8. or combines bits; xor keeps different bits; not flips bits. shl(1,4) shifts 1 left by four places and returns 16. Results show decimal, hexadecimal and binary. Bitwise operations use signed 32-bit integers.</p></details><details><summary>Your log & privacy</summary><p>The demo saves every submitted calculation and graph request on this device, with its expression, angle unit, timestamp, result or error. Export downloads the complete log as JSON. Clear asks for a second click before deleting the log. No accounts, analytics or network requests. Embedded instances save only when given a storage-key. If device storage fills, export before closing to preserve unsaved runs.</p></details><details><summary>Precision & limits</summary><p>Uses IEEE 754 double-precision arithmetic. Display precision is adjustable; intermediate calculations retain full precision. Decimal rounding, numerical graphs and ill-conditioned matrices have limits. This is a numerical calculator, not a symbolic algebra system. Input size, nesting and matrix limits keep expressions manageable.</p></details></div><h3>Function field guide</h3><input class="field" id="help-search" type="search" aria-label="Search functions" placeholder="Find a function, e.g. sine or determinant"><div class="help-list" id="help-list"></div></div></dialog><dialog class="modal" id="settings" aria-labelledby="settings-title"><div class="modal-head"><h2 id="settings-title">Make it your own.</h2><button class="icon" data-close="settings" aria-label="Close settings">${icon('close')}</button></div><div class="modal-body"><div class="setting"><label for="setting-angle">Angle unit<small>Used for calculations and every graph.</small></label><select id="setting-angle"><option value="deg">Degrees</option><option value="rad">Radians</option><option value="grad">Gradians</option></select></div><div class="setting"><label for="precision">Display precision<small>Significant digits; does not round internal results.</small></label><select id="precision">${[6,10,12,15].map(n=>`<option value="${n}">${n} digits</option>`).join('')}</select></div><h3>Designed to travel light.</h3><p>Plain JavaScript. One isolated web component. Import the engine alone for use in other apps, or embed the whole calculator with a single HTML element.</p><p id="settings-storage"></p></div></dialog>`;}
+  bind(){const on=(node,event,handler)=>node.addEventListener(event,handler,{signal:this.abort.signal});on(this.shadowRoot,'click',event=>{const b=event.target.closest('button');if(!b)return;if(b.dataset.mode)this.setMode(b.dataset.mode);if(b.dataset.angle)this.setAngle(b.dataset.angle);if(b.dataset.key)this.key(b.dataset.key);if(b.dataset.example){this.$('#expression').value=b.dataset.example;this.$('#expression').focus();}if(b.dataset.dialog)this.openDialog(b.dataset.dialog);if(b.dataset.close)this.$('#'+b.dataset.close).close();});on(this.$('.tabs'),'keydown',e=>{if(!['ArrowLeft','ArrowRight','Home','End'].includes(e.key))return;e.preventDefault();const tabs=this.$$('.tab');let i=tabs.indexOf(this.shadowRoot.activeElement);i=e.key==='Home'?0:e.key==='End'?tabs.length-1:(i+(e.key==='ArrowRight'?1:-1)+tabs.length)%tabs.length;this.setMode(tabs[i].dataset.mode);tabs[i].focus();});on(this.$('#expression-form'),'submit',e=>{e.preventDefault();this.calculate();});on(this.$('#expression'),'keydown',e=>{if(e.key==='Escape'){this.$('#expression').value='';}if(e.key==='ArrowUp'&&!e.target.value){const last=this.history.findLast(h=>h.kind==='calculation');if(last){e.target.value=last.expression;e.preventDefault();}}});on(this.$('#draw'),'click',()=>this.plot());on(this.$('#copy'),'click',async()=>{try{await navigator.clipboard.writeText(this.$('#result').textContent);this.status('Result copied.');}catch{this.status('Copy unavailable. Select the result to copy it.');}});on(this.$('#export'),'click',()=>this.exportHistory());on(this.$('#clear-history'),'click',()=>{const b=this.$('#clear-history');if(b.dataset.confirm!=='yes'){b.dataset.confirm='yes';b.textContent='Confirm clear';this.status('Click Confirm clear to delete this log.');return}this.history=[];delete b.dataset.confirm;b.textContent='Clear';this.save();this.renderHistory();this.status('Calculation log cleared.');});on(this.$('#help-search'),'input',e=>this.renderHelp(e.target.value));on(this.$('#setting-angle'),'change',e=>this.setAngle(e.target.value));on(this.$('#precision'),'change',e=>{this.precision=Number(e.target.value);if(!this.$('#result').classList.contains('error'))this.$('#result').textContent=formatValue(this.lastResult,this.precision);this.save();});on(this.$('#zoom-in'),'click',()=>this.zoom(.7));on(this.$('#zoom-out'),'click',()=>this.zoom(1/.7));on(this.$('#reset-graph'),'click',()=>{this.resetView();this.syncBounds();this.scheduleGraph();});for(const d of this.$$('dialog')){on(d,'keydown',e=>{if(e.key==='Escape'){e.preventDefault();e.stopPropagation();d.close();}});on(d,'click',e=>{if(e.target===d){const r=d.getBoundingClientRect();if(e.clientX<r.left||e.clientX>r.right||e.clientY<r.top||e.clientY>r.bottom)d.close();}});}const canvas=this.$('canvas');on(canvas,'keydown',e=>{if(['+','=','-'].includes(e.key)){e.preventDefault();this.zoom(e.key==='-'?1/.7:.7);}if(e.key.startsWith('Arrow')){e.preventDefault();const v=this.view,dx=(v.xmax-v.xmin)*.1,dy=(v.ymax-v.ymin)*.1;const x=e.key==='ArrowRight'?dx:e.key==='ArrowLeft'?-dx:0,y=e.key==='ArrowUp'?dy:e.key==='ArrowDown'?-dy:0;this.pan(x,y);}});on(canvas,'pointerdown',e=>{const r=canvas.getBoundingClientRect();this.drag={x:e.clientX,y:e.clientY,view:{...this.view},width:r.width,height:r.height};canvas.setPointerCapture(e.pointerId);});on(canvas,'pointermove',e=>{const r=canvas.getBoundingClientRect();if(this.drag){const d=this.drag,dx=(e.clientX-d.x)/d.width*(d.view.xmax-d.view.xmin),dy=(e.clientY-d.y)/d.height*(d.view.ymax-d.view.ymin);const next={xmin:d.view.xmin-dx,xmax:d.view.xmax-dx,ymin:d.view.ymin+dy,ymax:d.view.ymax+dy};if(this.validView(next)){this.view=next;this.syncBounds();this.scheduleGraph();}}const x=this.view.xmin+(e.clientX-r.left)/r.width*(this.view.xmax-this.view.xmin);let y;try{y=evaluate(this.curves[0],{angle:this.angle,variables:{x,ans:this.ans}});}catch{}this.$('#trace').textContent=`x ${this.short(x)}${typeof y==='number'?' · y '+this.short(y):''}`;});on(canvas,'pointerup',()=>{this.drag=null});on(canvas,'pointercancel',()=>{this.drag=null});on(canvas,'lostpointercapture',()=>{this.drag=null});}
+  status(text){this.$('#status').textContent=text;}
+  setMode(mode){if(!['calculate','graph','matrix','logic'].includes(mode))throw new Error('Unknown calculator mode');this.mode=mode;this.$$('.tab').forEach(b=>{b.setAttribute('aria-selected',String(b.dataset.mode===mode));b.tabIndex=b.dataset.mode===mode?0:-1});this.$('#calculator-panel').setAttribute('aria-labelledby','tab-'+mode);this.$('#mode-label').textContent={calculate:'YOUR WORKSPACE',graph:'FOLLOW THE CURVE',matrix:'THINK IN MATRICES',logic:'A BIT OF LOGIC'}[mode];for(const m of ['graph','matrix','logic'])this.$('#'+m+'-editor').hidden=m!==mode;this.$('.keypad').hidden=mode==='graph';this.$('.quick').hidden=mode==='graph';this.updateExamples();if(mode==='graph')this.syncBounds();this.updateLogic();}
+  setAngle(angle){if(!['deg','rad','grad'].includes(angle))throw new Error('Unknown angle unit');this.angle=angle;this.$$('button[data-angle]').forEach(b=>b.setAttribute('aria-pressed',String(b.dataset.angle===angle)));this.$('#setting-angle').value=angle;this.resetView();this.syncBounds();this.updateExamples();this.save();this.scheduleGraph();this.status(`Using ${ {deg:'degrees',rad:'radians',grad:'gradians'}[angle]}. Recalculate to update the result.`);}
+  updateExamples(){const examples=this.mode==='matrix'?['det([[1,2],[3,4]])','dot([1,2],[3,4])']:this.mode==='logic'?['xor(0b1100,0b1010)','shl(1,4)']:this.angle==='deg'?['sin(30)','hypot(3,4)','(2+3)^2']:this.angle==='rad'?['sin(pi/6)','atan2(3,4)','(2+3)^2']:['sin(100)','hypot(3,4)','(2+3)^2'];const node=this.$('#quick-examples');node.replaceChildren(...examples.map(e=>{const b=document.createElement('button');b.className='chip';b.dataset.example=e;b.textContent=e;return b}));const guides={calculate:['Every angle covered.','Switch between degrees, radians and gradians above. Your trig functions follow along.'],graph:['A different point of view.','Your graph shares the angle unit above. Use a wider x range for degrees, or a smaller one for radians.'],matrix:['Rows, columns, possibilities.','Try det([[1,2],[3,4]]) to turn a square matrix into a single number: −2.'],logic:['Make every bit count.','Prefix binary values with 0b. The result is shown in decimal, binary and hexadecimal.']};this.$('#guide-title').textContent=guides[this.mode][0];this.$('#guide-text').textContent=guides[this.mode][1];}
+  key(key){const input=this.$('#expression');if(key==='equals'){this.calculate();return}if(key==='clear'){input.value='';this.$('#result').textContent='0';this.$('#result').classList.remove('error');this.lastResult=0;this.$('#answer-meta').textContent='Workspace cleared. Your history is still here.';this.updateLogic();input.focus();return}let start=input.selectionStart,end=input.selectionEnd;if(key==='back'){if(start===end)start=Math.max(0,start-1);input.setRangeText('',start,end,'end');}else if(key==='negate'){input.value=input.value?`-(${input.value})`:'-';}else if(key==='reciprocal'){input.value=input.value?`1/(${input.value})`:'1/(';}else{if(input.value.length+key.length>4096){this.status('Expression limit: 4096 characters.');return}input.setRangeText(key,start,end,'end');}input.focus();}
+  calculate(expression=this.$('#expression').value){const text=String(expression).trim();if(!text){this.status('Enter an expression to get started.');return null}this.$('#expression').value=text;let result;try{result=evaluate(text,{angle:this.angle,variables:{ans:this.ans}});this.lastResult=result;this.ans=result;const formatted=formatValue(result,this.precision);this.$('#result').textContent=formatted;this.$('#result').classList.remove('error');this.$('#answer-meta').textContent=`${this.angle.toUpperCase()} · ${this.precision} significant digits`;this.record({expression:text,result:formatted,ok:true,kind:'calculation'});this.status('Calculated and added to your log.');this.updateLogic();this.dispatchEvent(new CustomEvent('calculate',{detail:{expression:text,result,angle:this.angle},bubbles:true,composed:true}));return result;}catch(error){const message=error instanceof Error?error.message:String(error);this.$('#result').textContent=message;this.$('#result').classList.add('error');this.$('#answer-meta').textContent='Check the expression, or open the function field guide.';this.record({expression:text,result:message,ok:false,kind:'calculation'});this.status('Error recorded in your log.');this.$('#logic-result').textContent='';this.dispatchEvent(new CustomEvent('calculation-error',{detail:{expression:text,error:message},bubbles:true,composed:true}));return null;}}
+  updateLogic(){const node=this.$('#logic-result'),v=this.lastResult;if(this.$('#result').classList.contains('error')){node.textContent='';return}node.textContent=typeof v==='number'&&Number.isInteger(v)&&v>=-2147483648&&v<=2147483647?`DEC  ${v}\nHEX  0x${(v>>>0).toString(16).toUpperCase()}\nBIN  0b${(v>>>0).toString(2)}`:'Binary / hex display needs a signed 32-bit integer.';node.style.whiteSpace='pre-wrap';}
+  record(entry){this.history.push({...entry,angle:this.angle,timestamp:new Date().toISOString()});this.save();this.renderHistory();}
+  renderHistory(){this.$('#history-count').textContent=`${this.history.length} ${this.history.length===1?'run':'runs'}`;const list=this.$('#history-list');list.replaceChildren();if(!this.history.length){const p=document.createElement('div');p.className='empty';p.textContent='Good ideas leave a trail. Your calculations will live here.';list.append(p);return}for(const e of this.history.slice(-this.visibleHistory).reverse()){const row=document.createElement('div');row.className='entry';const b=document.createElement('button');b.title='Reuse this '+e.kind;b.setAttribute('aria-label','Reuse '+e.expression);const expression=document.createElement('div');expression.className='entry-expression';expression.textContent=e.expression;const result=document.createElement('div');result.className='entry-result'+(e.ok?'':' bad');result.textContent=e.result;const meta=document.createElement('div');meta.className='entry-meta';meta.textContent=e.angle.toUpperCase()+' · '+(e.kind==='graph'?'GRAPH':e.ok?'CALCULATED':'ERROR');b.append(expression,result,meta);b.addEventListener('click',()=>{if(e.kind==='graph'){this.setMode('graph');this.$('#curve-0').value=e.expression;this.$('#curve-1').value='';this.$('#curve-2').value='';this.$('#curve-0').focus();}else{this.$('#expression').value=e.expression;this.$('#expression').focus();}this.setAngle(e.angle);this.status('Loaded from history. Run it to calculate again.');});const time=document.createElement('time');time.dateTime=e.timestamp;const d=new Date(e.timestamp);time.textContent=Number.isNaN(d.getTime())?'':d.toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'});time.title=Number.isNaN(d.getTime())?'':d.toLocaleString();row.append(b,time);list.append(row);}if(this.history.length>this.visibleHistory){const b=document.createElement('button');b.className='chip load';b.textContent='Show 50 more runs';b.addEventListener('click',()=>{this.visibleHistory+=50;this.renderHistory()});list.append(b);}}
+  exportHistory(){const data={application:'Extreme Calculator',version:1,exportedAt:new Date().toISOString(),entries:this.history};const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});const url=URL.createObjectURL(blob),a=document.createElement('a');a.href=url;a.download='extreme-calculation-log-'+new Date().toISOString().slice(0,10)+'.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000);this.status(`Exported ${this.history.length} runs.`);return data;}
+  openDialog(id){this.$('#setting-angle').value=this.angle;this.$('#precision').value=this.precision;this.$('#settings-storage').textContent=this.storageKey?'History is saved on this device. Export it to move it to another app.':'This embedded calculator keeps history for the session. Add a unique storage-key attribute to persist it.';if(id==='help')this.renderHelp(this.$('#help-search').value);this.$('#'+id).showModal();}
+  renderHelp(search=''){const list=this.$('#help-list');list.replaceChildren();for(const f of FUNCTIONS.filter(f=>`${f.name} ${f.description} ${f.syntax}`.toLowerCase().includes(search.toLowerCase()))){const card=document.createElement('div');card.className='help-card';const code=document.createElement('code');code.textContent=f.syntax;const p=document.createElement('p');p.textContent=f.description;const b=document.createElement('button');b.textContent='Try '+f.example;b.addEventListener('click',()=>{this.$('#expression').value=f.example;this.$('#help').close();this.setMode('calculate');this.$('#expression').focus();});card.append(code,p,b);list.append(card);}if(!list.children.length){list.textContent='No matching function. Try a shorter search.'}}
+  resetView(){const bound=this.angle==='deg'?360:this.angle==='grad'?400:2*Math.PI;this.view={xmin:-bound,xmax:bound,ymin:-1.8,ymax:1.8};}
+  syncBounds(){for(const k of ['xmin','xmax','ymin','ymax']){const node=this.$('#'+k);if(node)node.value=Number(this.view[k].toPrecision(8));}}
+  validView(v){return Object.values(v).every(x=>Number.isFinite(x)&&Math.abs(x)<=1e12)&&v.xmax-v.xmin>=1e-9&&v.ymax-v.ymin>=1e-9;}
+  zoom(factor){const v=this.view,cx=(v.xmin+v.xmax)/2,cy=(v.ymin+v.ymax)/2,rx=(v.xmax-v.xmin)*factor/2,ry=(v.ymax-v.ymin)*factor/2,next={xmin:cx-rx,xmax:cx+rx,ymin:cy-ry,ymax:cy+ry};if(!this.validView(next)){this.status('Graph zoom limit reached.');return}this.view=next;this.syncBounds();this.scheduleGraph();}
+  pan(dx,dy){const v=this.view,next={xmin:v.xmin+dx,xmax:v.xmax+dx,ymin:v.ymin+dy,ymax:v.ymax+dy};if(!this.validView(next))return;this.view=next;this.syncBounds();this.scheduleGraph();}
+  plot(){const expressions=[0,1,2].map(i=>this.$('#curve-'+i).value.trim()).filter(Boolean);const next={};for(const k of ['xmin','xmax','ymin','ymax'])next[k]=this.$('#'+k).value.trim()===''?NaN:Number(this.$('#'+k).value);if(!this.validView(next)){this.$('#graph-error').textContent='Use finite bounds within ±1e12, with max greater than min (span ≥ 1e−9).';for(const e of expressions)this.record({expression:e,result:this.$('#graph-error').textContent,ok:false,kind:'graph'});return}if(!expressions.length){this.$('#graph-error').textContent='Add at least one expression in x.';return}this.curves=expressions;this.view=next;this.drawGraph(true);}
+  scheduleGraph(){cancelAnimationFrame(this.frame);this.frame=requestAnimationFrame(()=>this.drawGraph(false));}
+  short(n){if(Math.abs(n)<1e-12)return '0';return Number(n.toPrecision(5)).toString();}
+  drawGraph(log=false){const canvas=this.$('canvas');if(!canvas)return;const rect=canvas.getBoundingClientRect(),w=rect.width,h=rect.height;if(!w||!h)return;const ratio=Math.min(window.devicePixelRatio||1,2);canvas.width=Math.round(w*ratio);canvas.height=Math.round(h*ratio);const ctx=canvas.getContext('2d');ctx.scale(ratio,ratio);ctx.clearRect(0,0,w,h);const v=this.view,px=x=>(x-v.xmin)/(v.xmax-v.xmin)*w,py=y=>h-(y-v.ymin)/(v.ymax-v.ymin)*h;const step=span=>{const raw=span/7,base=10**Math.floor(Math.log10(raw)),n=raw/base;return(n>5?10:n>2?5:n>1?2:1)*base};ctx.font='9px ui-monospace, monospace';ctx.lineWidth=1;for(const axis of ['x','y']){const min=axis==='x'?v.xmin:v.ymin,max=axis==='x'?v.xmax:v.ymax,s=step(max-min);for(let value=Math.ceil(min/s)*s,count=0;value<=max&&count<100;value+=s,count++){const p=axis==='x'?px(value):py(value);ctx.strokeStyle=Math.abs(value)<s*1e-8?'#c1cdb7':'#e9eddf';ctx.beginPath();if(axis==='x'){ctx.moveTo(p,0);ctx.lineTo(p,h)}else{ctx.moveTo(0,p);ctx.lineTo(w,p)}ctx.stroke();ctx.fillStyle='#99a68d';if(axis==='x'){ctx.textAlign='center';if(p>15&&p<w-15)ctx.fillText(this.short(value),p,Math.min(h-5,Math.max(12,py(0)+13)));}else{ctx.textAlign='left';if(p>10&&p<h-10&&Math.abs(value)>s*1e-8)ctx.fillText(this.short(value),Math.min(w-40,Math.max(6,px(0)+6)),p-4);}}}
+    const colors=['#5d8854','#bc9b65','#6b8f9a'],errors=[];const sampleCount=Math.min(700,Math.ceil(w*1.25));for(let index=0;index<this.curves.length;index++){const expression=this.curves[index];let valid=0,previous=null,firstError='',timedOut=false;const started=performance.now();ctx.strokeStyle=colors[index%colors.length];ctx.lineWidth=1.8;ctx.beginPath();for(let i=0;i<=sampleCount;i++){if(performance.now()-started>80){timedOut=true;break}const x=v.xmin+i/sampleCount*(v.xmax-v.xmin);let y;try{y=evaluate(expression,{angle:this.angle,variables:{x,ans:this.ans}});if(typeof y!=='number'||!Number.isFinite(y))throw new Error('Graph expressions must return a finite number.');}catch(error){if(!firstError)firstError=error.message;previous=null;continue}valid++;const p={x:px(x),y:py(y)};if(Math.abs(p.y)>h*8){previous=null;continue}let connect=previous&&Math.abs(p.y-previous.y)<h*.65;if(connect&&Math.abs(p.y-previous.y)>h*.2){try{const mx=x-(v.xmax-v.xmin)/sampleCount/2,my=evaluate(expression,{angle:this.angle,variables:{x:mx,ans:this.ans}});connect=typeof my==='number'&&Math.abs(py(my)-(p.y+previous.y)/2)<h*.1;}catch{connect=false}}if(connect)ctx.lineTo(p.x,p.y);else ctx.moveTo(p.x,p.y);previous=p;}ctx.stroke();if(timedOut){firstError='Graph work limit reached. Simplify the expression.';errors.push(`${expression}: ${firstError}`);}if(!valid&&!timedOut)errors.push(`${expression}: ${firstError||'No defined values in this window.'}`);if(log)this.record({expression,result:valid&&!timedOut?`Plotted ${valid} samples · x [${this.short(v.xmin)}, ${this.short(v.xmax)}] · y [${this.short(v.ymin)}, ${this.short(v.ymax)}]`:firstError||'No defined values in this window.',ok:valid>0&&!timedOut,kind:'graph'});}
+    this.$('#graph-error').textContent=errors.join(' · ');this.$('#graph-range').textContent=`x [${this.short(v.xmin)}, ${this.short(v.xmax)}] · ${this.angle.toUpperCase()}`;this.$('#graph-legend').textContent=this.curves.join(' · ');this.$('#graph-legend').title=this.curves.join(' · ');canvas.setAttribute('aria-label',`Graph of ${this.curves.join(' and ')} in ${this.angle}. x from ${this.short(v.xmin)} to ${this.short(v.xmax)}, y from ${this.short(v.ymin)} to ${this.short(v.ymax)}. Arrow keys pan; plus and minus zoom.`);if(log)this.status(errors.length?'Graph errors recorded in your log.':'Curves plotted and recorded.');}
+}
+if(!customElements.get('extreme-calculator'))customElements.define('extreme-calculator',ExtremeCalculator);
+</script>
+</head>
+<body>
+<header class="masthead"><a class="wordmark" href="#" aria-label="Extreme home"><span class="mark">e<span>×</span></span> EXTREME<span class="tag">CALCULATOR</span></a><span class="local"><i></i> LOCAL BY DESIGN</span></header>
+<main><div class="intro"><div><p class="eyebrow">SMALL FOOTPRINT. BIG POSSIBILITIES.</p><h1>A little space for <em>big math.</em></h1><p class="subtitle">From your first calculation to your next curve. Make yourself at home.</p></div><span class="edition">SCIENTIFIC / GRAPHING<br>01 — EVERYDAY EXPLORATION</span></div>
+<extreme-calculator storage-key="extreme-demo"></extreme-calculator>
+<footer><span>Made to go wherever your ideas go.</span><span>NO ACCOUNTS <b>·</b> NO NETWORK CALLS <b>·</b> ZERO RUNTIME DEPENDENCIES</span></footer></main>
+</body></html>

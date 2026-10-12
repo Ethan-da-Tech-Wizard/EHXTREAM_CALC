@@ -1,0 +1,10 @@
+import {readFile,writeFile,mkdir} from 'node:fs/promises';
+import {gzipSync,brotliCompressSync} from 'node:zlib';
+const root=new URL('../',import.meta.url);
+const read=name=>readFile(new URL(name,root),'utf8');
+const [engine,component,html,css]=await Promise.all(['engine.js','calculator.js','index.html','demo.css'].map(read));
+const bundle=engine+'\n'+component.replace(/^import .*?from '\.\/engine\.js';\s*/, '');
+const standalone=html.replace('<link rel="stylesheet" href="demo.css"><script type="module" src="calculator.js"></script>',()=>`<style>${css}</style><script type="module">${bundle.replaceAll('</script','<\\/script')}</script>`);
+await mkdir(new URL('dist/',root),{recursive:true});
+await Promise.all([writeFile(new URL('dist/extreme-calculator.js',root),bundle),writeFile(new URL('dist/extreme-calculator.html',root),standalone),writeFile(new URL('dist/extreme-calculator.js.gz',root),gzipSync(bundle)),writeFile(new URL('dist/extreme-calculator.js.br',root),brotliCompressSync(bundle))]);
+console.log(`Standalone HTML: ${Buffer.byteLength(standalone)} bytes\nEmbeddable JS: ${Buffer.byteLength(bundle)} bytes (${gzipSync(bundle).length} gzip; ${brotliCompressSync(bundle).length} Brotli)\nEngine: ${Buffer.byteLength(engine)} bytes (${gzipSync(engine).length} gzip)`);
