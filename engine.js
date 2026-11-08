@@ -1,4 +1,11 @@
-/** Dependency-free calculator. All parsing and evaluation is bounded; no code execution. */
+/**
+ * Program: Extreme Calculator Mathematical Engine
+ * Programmer: The Author
+ * Last Modified: 11/08/2026
+ * Purpose: Dependency-free, bounded mathematical evaluator supporting arithmetic precedence,
+ *          trigonometric operations across angle units (deg, rad, grad), matrix linear algebra,
+ *          and 32-bit bitwise logic operations without code execution risks.
+ */
 const LIMITS = Object.freeze({ length: 16384, tokens: 2048, depth: 64, dimension: 16, work: 100000 });
 const fail = message => { throw new Error(message); };
 const finite = value => {

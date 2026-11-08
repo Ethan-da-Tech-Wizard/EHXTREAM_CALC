@@ -1,3 +1,11 @@
+/**
+ * Program: Extreme Calculator Web Component
+ * Programmer: The Author
+ * Last Modified: 11/08/2026
+ * Purpose: Embeddable Web Component UI for scientific and graphing calculations,
+ *          providing interactive Canvas 2D curve plotting, history logs, and matrix manipulation.
+ */
+
 import { evaluate, formatValue, FUNCTIONS } from './engine.js';
 
 const icons={help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4m0 3v.01"/>',settings:'<path d="m9 3-1 3-3 1v4l-2 1 2 1v4l3 1 1 3h6l1-3 3-1v-4l2-1-2-1V7l-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/>',close:'<path d="m6 6 12 12M6 18 18 6"/>',download:'<path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/>',copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M15 8V4H4v11h4"/>',back:'<path d="m9 5-7 7 7 7h12V5Zm4 4 5 6m0-6-5 6"/>',expand:'<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>'};
