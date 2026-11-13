@@ -2,7 +2,7 @@
 
 An embeddable scientific and graphing calculator with matrix tools, custom-element UI, and standalone offline builds.
 
-**Status:** Working calculator component  
+**Status:** Calculator project; the current build and results have not been independently verified in this review.  
 **Built with:** JavaScript, Web Components, Node.js
 
 [Project guide](docs/PROJECT_GUIDE.md) · [Every file explained](docs/FILE_GUIDE.md) · [Licenses and dependencies](docs/LICENSE_REVIEW.md)
