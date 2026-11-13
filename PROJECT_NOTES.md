@@ -94,7 +94,7 @@ All functions and workflows have in-app guidance. There is no need to memorize f
 
 ## Log and privacy
 
-The demo's log is saved under `extreme-demo` in the browser's local storage. Data never leaves your browser unless you export it. There is no artificial history cap; storage still has the browser's quota. If saving fails, a visible notice tells you that new entries are session-only and should be exported before closing. Private browsing, cleared site data, or a different browser/profile can remove or isolate local storage. The JSON export is the portable archive; importing archives is not implemented.
+The project documents storing the demo log under `extreme-demo` in browser local storage. Network and data-handling behavior have not been independently verified across configurations. There is no artificial history cap; storage still has the browser's quota. If saving fails, a visible notice tells you that new entries are session-only and should be exported before closing. Private browsing, cleared site data, or a different browser/profile can remove or isolate local storage. The JSON export is the portable archive; importing archives is not implemented.
 
 Saved results capture their display precision at submission time. Changing precision affects the current result; it does not rewrite historical results. Changing angle unit affects future calculations and graphs, and does not silently recompute the displayed answer. `ans` retains the last successful raw result for the component's current lifetime. Graph sampling and panning are not individually added to the log; explicitly submitted graph expressions are.
 
