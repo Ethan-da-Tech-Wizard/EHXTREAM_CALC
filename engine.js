@@ -1,23 +1,47 @@
-/**
- * Program: Extreme Calculator Mathematical Engine
- * Programmer: The Author
- * Last Modified: 11/08/2026
- * Purpose: Dependency-free, bounded mathematical evaluator supporting arithmetic precedence,
- *          trigonometric operations across angle units (deg, rad, grad), matrix linear algebra,
- *          and 32-bit bitwise logic operations without code execution risks.
- */
+// Program: EHXTREAM_CALC - engine.js
+// Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant)
+// Last Modified: 2026-11-18
+// Purpose: Dependency-free math engine that safely turns a typed expression into a number, vector or matrix (no eval), with hard size limits.
+//
+// OVERVIEW (for beginners)
+// This file is the "brain" of the calculator. It never runs the user's text as
+// JavaScript. Instead it works in three steps:
+//   1. tokenize()  - chops the text into small pieces called tokens (numbers, names, symbols).
+//   2. evaluate()  - a "recursive descent parser" reads the tokens in order of math
+//                    precedence (+ - first, then * / %, then ^ and !) and computes the answer.
+//   3. formatValue() - turns the answer back into text for display.
+// It supports arithmetic, trig in degrees/radians/gradians, matrices, and 32-bit
+// bitwise logic. Every problem throws a plain Error with a readable message.
+//
+// LIMITS: hard safety caps so a huge or tricky expression cannot freeze the page.
+//   length    = most characters allowed in one expression
+//   tokens    = most tokens (pieces) allowed
+//   depth     = deepest nesting of brackets / unary signs
+//   dimension = largest vector length or matrix side
+//   work      = "work units" allowed per evaluation (each step spends one)
+// Object.freeze makes the object read-only so nothing can loosen these limits.
 const LIMITS = Object.freeze({ length: 16384, tokens: 2048, depth: 64, dimension: 16, work: 100000 });
+// fail: shortcut that throws an Error with the given message (used everywhere for bad input).
 const fail = message => { throw new Error(message); };
+// finite: returns the value only if it is a real, finite number; otherwise reports a domain error or overflow.
 const finite = value => {
   if (typeof value !== 'number' || !Number.isFinite(value)) fail('Expected a finite real number (domain error or overflow)');
   // Preserve signed zero so dms(-0, minutes, seconds) can express negative angles.
   return value;
 };
+// scalar: accepts only a single number (not an array) and checks that it is finite.
 const scalar = value => typeof value === 'number' ? finite(value) : fail('Expected a scalar number');
+// integer: accepts only whole numbers that JavaScript can store exactly (safe integers).
 const integer = value => Number.isSafeInteger(scalar(value)) ? value : fail('Expected a safe integer');
+// positive: the number must be greater than zero.
 const positive = value => scalar(value) > 0 ? value : fail('Expected a positive number');
+// nonnegative: the number must be zero or greater.
 const nonnegative = value => scalar(value) >= 0 ? value : fail('Expected a nonnegative number');
+// isArray: short local name for Array.isArray, used to tell numbers from vectors/matrices.
 const isArray = Array.isArray;
+// shape: checks a value is valid and reports its dimensions.
+// Returns [] for a single number, [n] for a vector of n numbers, and [rows, cols]
+// for a rectangular matrix. Fails for empty, too large, ragged or non-numeric data.
 function shape(value) {
   if (!isArray(value)) { scalar(value); return []; }
   if (!value.length || value.length > LIMITS.dimension) fail('Arrays must contain 1–16 entries per dimension');
@@ -33,21 +57,27 @@ function shape(value) {
   }
   return [value.length, width];
 }
+// matrix: requires a 2D matrix (and optionally a square one); returns its [rows, cols].
 function matrix(value, square = false) {
   const s = shape(value);
   if (s.length !== 2 || (square && s[0] !== s[1])) fail(square ? 'Expected a square matrix' : 'Expected a matrix');
   return s;
 }
+// vector: requires a 1D list of numbers and returns it.
 function vector(value) {
   if (shape(value).length !== 1) fail('Expected a vector');
   return value;
 }
+// map: applies fn to every number inside a scalar/vector/matrix, keeping the same shape, and checks each result is finite.
 function map(value, fn) { return isArray(value) ? value.map(v => map(v, fn)) : finite(fn(value)); }
+// zip: combines two same-shaped values entry by entry with fn (used for + and -); fails if shapes differ.
 function zip(a, b, fn) {
   if (JSON.stringify(shape(a)) !== JSON.stringify(shape(b))) fail('Array dimensions must match');
   const walk = (x, y) => isArray(x) ? x.map((v, i) => walk(v, y[i])) : finite(fn(x, y));
   return walk(a, b);
 }
+// product: multiplication. Number*anything scales every entry; matrix*matrix uses the
+// usual row-times-column rule. ctx.spend() counts work so huge products hit the work limit.
 function product(a, b, ctx) {
   if (!isArray(a)) return map(b, v => scalar(a) * v);
   if (!isArray(b)) return map(a, v => v * scalar(b));
@@ -59,19 +89,27 @@ function product(a, b, ctx) {
     return total;
   }));
 }
+// elimination: Gaussian elimination with partial pivoting, shared by det() and inverse().
+// When invert is false it returns the determinant; when true it returns the inverse matrix.
 function elimination(value, invert, ctx) {
   const [n] = matrix(value, true);
+  // Work on a copy so the caller's matrix is never modified.
   const a = value.map(row => row.slice());
+  // Start the identity matrix (1s on the diagonal); it is turned into the inverse as we go.
   const identity = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => +(i === j)));
   let determinant = 1;
+  // scale = largest absolute entry; used to judge when a pivot is too tiny to trust.
   const scale = Math.max(...a.flat().map(Math.abs));
   for (let col = 0; col < n; col++) {
+    // Pick the row with the largest value in this column (the pivot) for numerical stability.
     let pivot = col;
     for (let row = col + 1; row < n; row++) if (Math.abs(a[row][col]) > Math.abs(a[pivot][col])) pivot = row;
+    // A zero (or, when inverting, nearly zero) pivot means the matrix is singular: determinant 0 or no inverse.
     if (a[pivot][col] === 0 || (invert && Math.abs(a[pivot][col]) <= Number.EPSILON * n * scale)) {
       if (invert) fail('Matrix is singular or numerically ill-conditioned');
       return 0;
     }
+    // Swap rows to bring the pivot into place; a swap flips the sign of the determinant.
     if (pivot !== col) {
       [a[pivot], a[col]] = [a[col], a[pivot]];
       [identity[pivot], identity[col]] = [identity[col], identity[pivot]];
@@ -82,6 +120,7 @@ function elimination(value, invert, ctx) {
     if (invert) {
       for (let j = 0; j < n; j++) { ctx.spend(); a[col][j] = finite(a[col][j] / divisor); identity[col][j] = finite(identity[col][j] / divisor); }
     }
+    // Subtract multiples of the pivot row from the other rows to clear this column.
     for (let row = invert ? 0 : col + 1; row < n; row++) {
       if (row === col) continue;
       const factor = invert ? a[row][col] : finite(a[row][col] / divisor);
@@ -95,6 +134,7 @@ function elimination(value, invert, ctx) {
   }
   return invert ? identity : determinant;
 }
+// factorial: n! for whole numbers 0..170 (171! is too large for a double).
 function factorial(value) {
   const n = integer(nonnegative(value));
   if (n > 170) fail('Factorial exceeds the finite number range');
@@ -102,6 +142,7 @@ function factorial(value) {
   for (let i = 2; i <= n; i++) result = finite(result * i);
   return result;
 }
+// combinations: nCr (permute=false) or nPr (permute=true), built by a multiplicative loop with a work limit.
 function combinations(n, r, permute, ctx) {
   integer(nonnegative(n)); integer(nonnegative(r));
   if (r > n) fail('Require 0 <= r <= n');
@@ -111,18 +152,25 @@ function combinations(n, r, permute, ctx) {
   for (let i = 1; i <= r; i++) { ctx.spend(); result = finite(result * (permute ? n - i + 1 : (n - r + i) / i)); }
   return Number.isSafeInteger(Math.round(result)) ? Math.round(result) : result;
 }
+// registry: lookup table of every callable function (sin, det, and ...). Object.create(null) avoids inherited names like 'constructor'.
 const registry = Object.create(null);
+// define: adds one function to the registry with its docs (syntax, description, example), allowed argument count (min..max) and implementation (run).
 function define(name, syntax, description, example, min, max, run) {
   registry[name] = { name, syntax, description, example, min, max, run };
 }
+// unary: helper to define a function that takes exactly one number.
 const unary = (name, description, example, fn) => define(name, `${name}(x)`, description, example, 1, 1, ([x], ctx) => fn(scalar(x), ctx));
+// trigNames: friendly names used when generating help text for sin/cos/tan.
 const trigNames = { sin: 'Sine', cos: 'Cosine', tan: 'Tangent' };
+// Define sin, cos and tan. Angles are converted to radians first; tan rejects angles where cos is almost 0.
 for (const name of ['sin', 'cos', 'tan']) unary(name, `${trigNames[name]} of an angle in the selected unit.`, `${name}(45)`, (x, ctx) => {
   const radians = finite(x * ctx.toRadians);
   if (name === 'tan' && Math.abs(Math.cos(radians)) < 1e-14) fail('Tangent is undefined at this angle');
   return Math[name](radians);
 });
+// Define the inverse trig functions asin, acos, atan; results are converted back to the chosen angle unit.
 for (const name of ['asin', 'acos', 'atan']) unary(name, `Inverse ${trigNames[name.slice(1)].toLowerCase()}; returns the principal angle in the selected unit${name === 'atan' ? '.' : '; input from -1 to 1.'}`, `${name}(0.5)`, (x, ctx) => Math[name](x) / ctx.toRadians);
+// Define the reciprocal trig functions sec, csc and cot; they reject poles where the denominator is almost 0.
 for (const [name, description] of Object.entries({ sec: 'Secant (1/cos)', csc: 'Cosecant (1/sin)', cot: 'Cotangent (cos/sin)' })) {
   unary(name, `${description} in the selected angle unit; rejects poles (denominator magnitude below 1e-14).`, `${name}(45)`, (x, ctx) => {
     const radians = finite(x * ctx.toRadians);
@@ -131,19 +179,23 @@ for (const [name, description] of Object.entries({ sec: 'Secant (1/cos)', csc: '
     return (name === 'cot' ? Math.cos(radians) : 1) / denominator;
   });
 }
+// Unit-conversion helpers that ignore the current angle mode.
 unary('todeg', 'Convert radians to degrees, independent of angle mode.', 'todeg(pi)', x => x * (180 / Math.PI));
 unary('torad', 'Convert degrees to radians, independent of angle mode.', 'torad(180)', x => x * (Math.PI / 180));
+// dms(degrees, minutes, seconds): converts degrees-minutes-seconds to decimal degrees; the sign of 'degrees' (even -0) applies to the whole angle.
 define('dms', 'dms(degrees, minutes, seconds)', 'Convert to decimal degrees; the degrees sign (including -0) applies to the entire angle. Minutes and seconds must be from 0 inclusive to 60 exclusive; independent of angle mode.', 'dms(-30, 15, 30)', 3, 3, ([degrees, minutes, seconds]) => {
   scalar(degrees); scalar(minutes); scalar(seconds);
   if (minutes < 0 || minutes >= 60 || seconds < 0 || seconds >= 60) fail('DMS minutes and seconds must satisfy 0 <= value < 60');
   const sign = degrees < 0 || Object.is(degrees, -0) ? -1 : 1;
   return sign * finite(Math.abs(degrees) + minutes / 60 + seconds / 3600);
 });
+// atan2(y, x): angle of the point (x, y) in the correct quadrant.
 define('atan2', 'atan2(y, x)', 'Quadrant-aware inverse tangent in the selected angle unit; (0,0) is undefined.', 'atan2(1, -1)', 2, 2, ([y, x], ctx) => {
   scalar(y); scalar(x);
   if (x === 0 && y === 0) fail('atan2(0, 0) is undefined');
   return Math.atan2(y, x) / ctx.toRadians;
 });
+// Text descriptions for functions that simply forward to a JavaScript Math function.
 const mathDescriptions = {
   sinh: 'Hyperbolic sine, (exp(x) - exp(-x))/2; independent of angle mode.',
   cosh: 'Hyperbolic cosine, (exp(x) + exp(-x))/2; independent of angle mode.',
@@ -159,29 +211,35 @@ const mathDescriptions = {
   ceil: 'Round up to the nearest integer, toward positive infinity.',
   round: 'Round to the nearest integer; exact halves round toward positive infinity.',
 };
+// Register each Math-backed function (sinh, sqrt, abs, round, ...) through unary().
 for (const [name, description] of Object.entries(mathDescriptions)) {
   unary(name, description, `${name}(${name === 'atanh' ? '0.5' : '1'})`, Math[name]);
 }
+// Natural log and general log (default base 10); both require positive inputs.
 unary('ln', 'Natural logarithm; x > 0.', 'ln(e)', x => Math.log(positive(x)));
 define('log', 'log(x, base=10)', 'Logarithm; x and base positive, base != 1.', 'log(8, 2)', 1, 2, ([x, base = 10]) => {
   positive(x); positive(base);
   if (base === 1) fail('Logarithm base must not equal 1');
   return Math.log(x) / Math.log(base);
 });
+// factorial function and the ncr / npr (combinations / permutations) functions.
 unary('factorial', 'Factorial of an integer from 0 through 170; also x!.', 'factorial(5)', factorial);
 for (const name of ['ncr', 'npr']) define(name, `${name}(n, r)`, `Number of ${name === 'ncr' ? 'combinations' : 'permutations'}; integers 0 <= r <= n.`, `${name}(5, 2)`, 2, 2, ([n, r], ctx) => combinations(n, r, name === 'npr', ctx));
+// items: lets min/max/sum/mean/hypot accept either several numbers or one array; fails if empty.
 function items(args) {
   const values = args.length === 1 && isArray(args[0]) ? args[0].flat() : args;
   if (!values.length) fail('Expected at least one number');
   values.forEach(scalar);
   return values;
 }
+// Aggregate functions that work on a list of numbers or all entries of one array.
 const aggregateDescriptions = { min: 'Smallest value', max: 'Largest value', sum: 'Total', mean: 'Arithmetic average', hypot: 'Square root of the sum of squares' };
 for (const name of ['min', 'max', 'sum', 'mean', 'hypot']) define(name, `${name}(x, ...) or ${name}([values])`, `${aggregateDescriptions[name]} of numbers or all entries of one array.`, `${name}(1, 2, 3)`, 1, 256, args => {
   const values = items(args);
   if (name === 'min' || name === 'max' || name === 'hypot') return Math[name](...values);
   return values.reduce((a, b) => finite(a + (name === 'mean' ? b / values.length : b)), 0);
 });
+// Matrix and vector functions: determinant, inverse, transpose, dot product and norm (length).
 define('det', 'det(matrix)', 'Determinant of a square matrix, using pivoted elimination.', 'det([[1,2],[3,4]])', 1, 1, ([a], ctx) => elimination(a, false, ctx));
 define('inverse', 'inverse(matrix)', 'Inverse of a square matrix; rejects singular or ill-conditioned matrices.', 'inverse([[1,2],[3,4]])', 1, 1, ([a], ctx) => elimination(a, true, ctx));
 define('transpose', 'transpose(matrix)', 'Swap matrix rows and columns.', 'transpose([[1,2],[3,4]])', 1, 1, ([a]) => {
@@ -197,15 +255,18 @@ define('norm', 'norm(array)', 'Euclidean vector norm or Frobenius matrix norm.',
   if (!shape(a).length) fail('Expected a vector or matrix');
   return Math.hypot(...a.flat());
 });
+// bits: checks a number fits in 32 bits and converts it to a signed 32-bit integer for bitwise operators.
 function bits(value) {
   integer(value);
   if (value < -2147483648 || value > 4294967295) fail('Bitwise input must fit 32 bits');
   return value | 0;
 }
+// Bitwise AND / OR / XOR, plus NOT and the shifts below, all on 32-bit integers.
 for (const [name, fn] of Object.entries({ and: (a, b) => a & b, or: (a, b) => a | b, xor: (a, b) => a ^ b })) {
   define(name, `${name}(a, b)`, `32-bit bitwise ${name.toUpperCase()}; result is a signed integer.`, `${name}(0b1010, 0b1100)`, 2, 2, ([a, b]) => fn(bits(a), bits(b)));
 }
 unary('not', '32-bit bitwise complement; result is a signed integer.', 'not(0)', x => ~bits(x));
+// Left and right bit shifts; the shift count must be 0 to 31.
 for (const [name, fn] of Object.entries({ shl: (a, n) => a << n, shr: (a, n) => a >> n })) {
   define(name, `${name}(x, count)`, `32-bit ${name === 'shr' ? 'sign-preserving right' : 'left'} shift, count 0–31.`, `${name}(8, 2)`, 2, 2, ([x, n]) => {
     const a = bits(x); integer(n);
@@ -218,6 +279,9 @@ export const FUNCTIONS = Object.freeze(Object.values(registry).map(({ name, synt
 
 // Small bounded LRU cache avoids rescanning expressions for graph samples.
 const tokenCache = new Map();
+// tokenize: splits an expression string into tokens.
+// Each token is {type, value}: 'number', 'identifier' (a name), one of the symbols
+// + - * / % ^ ! ( ) , [ ], or a final 'end' marker. Results are cached.
 function tokenize(expression) {
   if (typeof expression !== 'string' || !expression.trim()) fail('Expression must be a nonempty string');
   if (expression.length > LIMITS.length) fail('Expression length limit exceeded');
@@ -226,8 +290,10 @@ function tokenize(expression) {
     tokenCache.delete(expression); tokenCache.set(expression, cached);
     return cached;
   }
+  // tokens collects the pieces found; i is our position in the text.
   const tokens = [];
   let i = 0;
+  // Scan the text one piece at a time. Branches below handle: hex/binary literals (0x.., 0b..), decimal numbers, names, then single-character symbols; anything else is an error.
   while (i < expression.length) {
     const c = expression[i];
     if (/\s/.test(c)) { i++; continue; }
@@ -255,13 +321,16 @@ function tokenize(expression) {
   return tokens;
 }
 
+// Public entry point. options: { angle: 'deg'|'rad'|'grad', variables: { x, ans } }. Returns a number, vector or matrix, or throws an Error.
 /** Evaluate a real-valued expression. Default angle mode: radians. x is a finite scalar; ans may also be a vector or matrix. */
 export function evaluate(expression, options = {}) {
+  // Validate the options first so bad input fails with a clear message.
   if (!options || typeof options !== 'object' || isArray(options)) fail('Options must be an object');
   const { angle = 'rad', variables = {} } = options;
   if (!['deg', 'rad', 'grad'].includes(angle)) fail('Angle mode must be deg, rad, or grad');
   if (!variables || typeof variables !== 'object' || isArray(variables)) fail('Variables must be an object');
   // Copy own data properties only. Do not invoke user-defined getters.
+  // scope holds the allowed variable names (x and ans) with no inherited properties.
   const scope = Object.create(null);
   for (const name of ['x', 'ans']) {
     const descriptor = Object.getOwnPropertyDescriptor(variables, name);
@@ -271,17 +340,22 @@ export function evaluate(expression, options = {}) {
       else scope[name] = scalar(descriptor.value);
     }
   }
+  // Tokenize once, then parse. pos = current token, depth = nesting level, work = steps spent.
   const tokens = tokenize(expression);
   let pos = 0, depth = 0, work = 0;
+  // ctx: shared helper state for the functions. toRadians converts the chosen angle unit to radians; spend() enforces the work limit.
   const ctx = { toRadians: angle === 'deg' ? Math.PI / 180 : angle === 'grad' ? Math.PI / 200 : 1,
     spend() { if (++work > LIMITS.work) fail('Evaluation work limit exceeded'); } };
+  // Parser helpers: peek looks at the next token type, take consumes it if it matches, expect requires it.
   const peek = () => tokens[pos].type;
   const take = type => { if (peek() === type) { pos++; return true; } return false; };
   const expect = type => { if (!take(type)) fail(`Expected '${type}' at token ${pos + 1}`); };
+  // nested: wraps any recursive step to enforce the nesting-depth and work limits.
   function nested(fn) {
     if (++depth > LIMITS.depth) fail('Expression nesting limit exceeded');
     try { ctx.spend(); return fn(); } finally { depth--; }
   }
+  // add: handles + and - (lowest precedence), working left to right.
   function add() {
     let a = multiply();
     while (peek() === '+' || peek() === '-') {
@@ -290,6 +364,7 @@ export function evaluate(expression, options = {}) {
     }
     return a;
   }
+  // multiply: handles *, / and %, and also 'implicit multiplication' such as 2pi or 3(4+5) (a value directly followed by a number, name, ( or [).
   function multiply() {
     let a = unaryExpression();
     while (['*', '/', '%', 'number', 'identifier', '(', '['].includes(peek())) {
@@ -305,6 +380,7 @@ export function evaluate(expression, options = {}) {
     }
     return a;
   }
+  // unaryExpression: handles a leading + or - sign before a value.
   function unaryExpression() {
     return nested(() => {
       if (take('+')) return unaryExpression();
@@ -312,15 +388,18 @@ export function evaluate(expression, options = {}) {
       return power();
     });
   }
+  // power: handles postfix factorial (!) and ^ exponent (a ^ b).
   function power() {
     let a = primary();
     while (take('!')) { ctx.spend(); a = factorial(a); }
     if (take('^')) a = finite(scalar(a) ** scalar(unaryExpression()));
     return a;
   }
+  // primary: the smallest pieces - numbers, (brackets), [arrays], function calls, constants and variables.
   function primary() {
     if (peek() === 'number') return tokens[pos++].value;
     if (take('(')) { const value = nested(add); expect(')'); return value; }
+    // Array literal such as [1,2,3] or [[1,2],[3,4]].
     if (take('[')) {
       const values = [];
       do {
@@ -329,6 +408,7 @@ export function evaluate(expression, options = {}) {
       } while (take(','));
       expect(']'); shape(values); return values;
     }
+    // A name: either a function call like sin(30), a constant (pi, e, tau) or a variable (x, ans).
     if (peek() === 'identifier') {
       const name = tokens[pos++].value;
       if (Object.hasOwn(registry, name)) {
@@ -352,11 +432,13 @@ export function evaluate(expression, options = {}) {
     }
     fail(`Expected a number, function, or parenthesis at token ${pos + 1}`);
   }
+  // Parse the whole expression, make sure nothing is left over, and validate the result's shape.
   const result = add();
   expect('end'); shape(result);
   return result;
 }
 
+// formatValue: converts a result to text with 'precision' significant digits (default 12); arrays print as [a, b] / [[a, b], [c, d]].
 /** Format scalars, vectors, and matrices with 1–100 significant digits. */
 export function formatValue(value, precision = 12) {
   if (!Number.isInteger(precision) || precision < 1 || precision > 100) fail('Precision must be an integer from 1 through 100');
