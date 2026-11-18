@@ -1,4 +1,11 @@
-/** Dependency-free calculator. All parsing and evaluation is bounded; no code execution. */
+// ==============================================================================
+// Program: engine.js
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: Dependency-free, bounded mathematical evaluator supporting arithmetic precedence,
+//          trigonometric operations across angle units (deg, rad, grad), matrix linear algebra,
+//          and 32-bit bitwise logic operations without code execution risks.
+// ==============================================================================
 const LIMITS = Object.freeze({ length: 16384, tokens: 2048, depth: 64, dimension: 16, work: 100000 });
 const fail = message => { throw new Error(message); };
 const finite = value => {
@@ -211,6 +218,7 @@ export const FUNCTIONS = Object.freeze(Object.values(registry).map(({ name, synt
 
 // Small bounded LRU cache avoids rescanning expressions for graph samples.
 const tokenCache = new Map();
+// Step 1: Lexical analysis converting mathematical string into bounded token stream
 function tokenize(expression) {
   if (typeof expression !== 'string' || !expression.trim()) fail('Expression must be a nonempty string');
   if (expression.length > LIMITS.length) fail('Expression length limit exceeded');
@@ -249,6 +257,7 @@ function tokenize(expression) {
 }
 
 /** Evaluate a real-valued expression. Default angle mode: radians. x is a finite scalar; ans may also be a vector or matrix. */
+// Step 3: Evaluate expression with execution limits (max operations, recursion depth)
 export function evaluate(expression, options = {}) {
   if (!options || typeof options !== 'object' || isArray(options)) fail('Options must be an object');
   const { angle = 'rad', variables = {} } = options;
@@ -357,6 +366,15 @@ export function formatValue(value, precision = 12) {
   const format = v => isArray(v) ? `[${v.map(format).join(', ')}]` : String(Number(finite(v).toPrecision(precision)));
   return format(value);
 }
+
+// ==============================================================================
+// Program: calculator.js
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: Embeddable Web Component UI for scientific and graphing calculations,
+//          providing interactive Canvas 2D curve plotting, history logs, and matrix manipulation.
+// ==============================================================================
+import { evaluate, formatValue, FUNCTIONS } from './engine.js';
 
 const icons={help:'<circle cx="12" cy="12" r="9"/><path d="M9.5 9a2.5 2.5 0 0 1 5 0c0 2-2.5 2-2.5 4m0 3v.01"/>',settings:'<path d="m9 3-1 3-3 1v4l-2 1 2 1v4l3 1 1 3h6l1-3 3-1v-4l2-1-2-1V7l-3-1-1-3Z"/><circle cx="12" cy="12" r="3"/>',close:'<path d="m6 6 12 12M6 18 18 6"/>',download:'<path d="M12 3v12m-5-5 5 5 5-5M5 16v4h14v-4"/>',copy:'<rect x="8" y="8" width="12" height="12" rx="2"/><path d="M15 8V4H4v11h4"/>',back:'<path d="m9 5-7 7 7 7h12V5Zm4 4 5 6m0-6-5 6"/>',expand:'<path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/>'};
 const icon=name=>`<svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${icons[name]||''}</svg>`;

@@ -1,3 +1,9 @@
+// ==============================================================================
+// Program: calculator.d.ts
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: TypeScript declarations for ExtremeCalculator custom Web Component interface.
+// ==============================================================================
 import type {Angle, Value} from './index.js';
 export interface HistoryEntry { expression: string; result: string; ok: boolean; kind: 'calculation' | 'graph'; angle: Angle; timestamp: string }
 export class ExtremeCalculator extends HTMLElement {

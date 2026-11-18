@@ -1,3 +1,9 @@
+// ==============================================================================
+// Program: index.d.ts
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: TypeScript type definitions for the calculator mathematical evaluator and tokens.
+// ==============================================================================
 export type Value = number | number[] | number[][];
 export type Angle = 'deg' | 'rad' | 'grad';
 export interface EvaluateOptions { angle?: Angle; variables?: {x?: number; ans?: Value} }

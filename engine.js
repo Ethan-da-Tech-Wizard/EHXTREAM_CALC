@@ -1,11 +1,11 @@
-/**
- * Program: Extreme Calculator Mathematical Engine
- * Programmer: The Author
- * Last Modified: 11/08/2026
- * Purpose: Dependency-free, bounded mathematical evaluator supporting arithmetic precedence,
- *          trigonometric operations across angle units (deg, rad, grad), matrix linear algebra,
- *          and 32-bit bitwise logic operations without code execution risks.
- */
+// ==============================================================================
+// Program: engine.js
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: Dependency-free, bounded mathematical evaluator supporting arithmetic precedence,
+//          trigonometric operations across angle units (deg, rad, grad), matrix linear algebra,
+//          and 32-bit bitwise logic operations without code execution risks.
+// ==============================================================================
 const LIMITS = Object.freeze({ length: 16384, tokens: 2048, depth: 64, dimension: 16, work: 100000 });
 const fail = message => { throw new Error(message); };
 const finite = value => {
@@ -218,6 +218,7 @@ export const FUNCTIONS = Object.freeze(Object.values(registry).map(({ name, synt
 
 // Small bounded LRU cache avoids rescanning expressions for graph samples.
 const tokenCache = new Map();
+// Step 1: Lexical analysis converting mathematical string into bounded token stream
 function tokenize(expression) {
   if (typeof expression !== 'string' || !expression.trim()) fail('Expression must be a nonempty string');
   if (expression.length > LIMITS.length) fail('Expression length limit exceeded');
@@ -256,6 +257,7 @@ function tokenize(expression) {
 }
 
 /** Evaluate a real-valued expression. Default angle mode: radians. x is a finite scalar; ans may also be a vector or matrix. */
+// Step 3: Evaluate expression with execution limits (max operations, recursion depth)
 export function evaluate(expression, options = {}) {
   if (!options || typeof options !== 'object' || isArray(options)) fail('Options must be an object');
   const { angle = 'rad', variables = {} } = options;
