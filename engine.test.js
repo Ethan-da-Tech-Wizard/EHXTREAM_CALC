@@ -1,3 +1,10 @@
+// ==============================================================================
+// Program: engine.test.js
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: Comprehensive unit test suite for the mathematical evaluation engine,
+//          verifying arithmetic precedence, trigonometry, matrix operations, and limits.
+// ==============================================================================
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluate, formatValue, FUNCTIONS } from './engine.js';
@@ -31,6 +38,7 @@ const cases = {
   and: ['and(0b1010,0b1100)', 8], or: ['or(0b1010,0b1100)', 14], xor: ['xor(0b1010,0b1100)', 6],
   not: ['not(0)', -1], shl: ['shl(3,2)', 12], shr: ['shr(-8,2)', -2],
 };
+// Step 1: Verify all exported functions have documented examples and matching unit tests
 test('documentation and numerical coverage include every function exactly once', () => {
   assert.deepEqual(FUNCTIONS.map(f => f.name).sort(), Object.keys(cases).sort());
   assert.equal(new Set(FUNCTIONS.map(f => f.name)).size, FUNCTIONS.length);

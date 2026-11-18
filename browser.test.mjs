@@ -1,3 +1,10 @@
+// ==============================================================================
+// Program: browser.test.mjs
+// Programmer: Ethan-da-Tech-Wizard
+// Last Modified: November 18, 2026
+// Purpose: Playwright/Chromium UI automation suite validating calculator web component
+//          rendering, DOM state transitions, canvas plots, and dialog interactions.
+// ==============================================================================
 /** Independent Chromium UI verification.
  * npm install --prefix /tmp/extreme-browser-verification playwright
  * node browser.test.mjs
