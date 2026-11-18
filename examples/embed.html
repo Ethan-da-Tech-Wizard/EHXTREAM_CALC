@@ -1,7 +1,15 @@
 <!doctype html>
+<!-- Program: EHXTREAM_CALC - examples/embed.html -->
+<!-- Programmer: Ethan-da-Tech-Wizard (written with Claude, an AI assistant) -->
+<!-- Last Modified: 2026-11-18 -->
+<!-- Purpose: Example showing how another web page can embed the calculator with one script tag and one custom element. -->
 <html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Embed Extreme</title><script type="module" src="../calculator.js"></script></head>
+<!-- Page body: a centred column with simple styling around the embedded calculator. -->
 <body style="max-width:1000px;margin:24px auto;padding:12px;font-family:system-ui">
+<!-- Heading for the example page. -->
 <h1>Your app, your calculator</h1>
+<!-- The embedded calculator. storage-key saves history under 'my-app-calculator'; --calc-accent changes its accent colour. -->
 <extreme-calculator storage-key="my-app-calculator" style="--calc-accent:#285743"></extreme-calculator>
+<!-- Note for readers: the component's styles are isolated, and leaving out storage-key keeps history only for the session. -->
 <p>This component is isolated from the page's styles. Omit storage-key for session-only history.</p>
 </body></html>
