@@ -10,17 +10,28 @@
  * node browser.test.mjs
  * Override PLAYWRIGHT_MODULE or CHROMIUM_PATH for other installations.
  */
+// End-to-end UI tests. Needs Playwright and a Chromium binary, which are NOT
+// bundled with this repository (see the usage note above), so this suite cannot
+// run in an offline checkout.
 import assert from 'node:assert/strict';
 import { createServer } from 'node:http';
 import { readFile, stat, mkdir, writeFile } from 'node:fs/promises';
 import { dirname, extname, resolve, sep } from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 
+// Repo root: static server serves files from here.
 const root = dirname(fileURLToPath(import.meta.url));
+// Playwright is imported dynamically from an external install location so the
+// project itself stays dependency-free.
 const modulePath = process.env.PLAYWRIGHT_MODULE || '/tmp/extreme-browser-verification/node_modules/playwright/index.mjs';
 const { chromium } = await import(pathToFileURL(modulePath).href);
+// MIME types for the throwaway static file server below.
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.json': 'application/json' };
+// Minimal static file server on an ephemeral 127.0.0.1 port. It refuses paths
+// that escape `root` (403) and answers favicon requests with 204 to keep the
+// browser console free of errors the tests would otherwise flag.
 const server = createServer(async (req, res) => {
+  // Main run. First confirm the files under test exist, then execute each check.
   try {
     const pathname = decodeURIComponent(new URL(req.url, 'http://localhost').pathname);
     if (pathname === '/favicon.ico') { res.writeHead(204).end(); return; }
@@ -30,16 +41,22 @@ const server = createServer(async (req, res) => {
     res.end(await readFile(file));
   } catch { res.writeHead(404).end(); }
 });
+// Port 0 lets the OS pick a free port; baseURL records it.
 await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
 const baseURL = `http://127.0.0.1:${server.address().port}`;
+// Headless Chromium; --no-sandbox is needed in many CI/container environments.
 const browser = await chromium.launch({ executablePath: process.env.CHROMIUM_PATH || '/usr/bin/chromium', headless: true, args: ['--no-sandbox'] });
+// Accumulates {name, passed, error} for the final summary and exit code.
 const results = [];
+// Locator for the calculator's expression input, by accessible name.
 const expression = calc => calc.getByRole('textbox', { name: 'Expression', exact: true });
+// Type an expression, press Enter and return the displayed result text.
 async function run(calc, text) {
   await expression(calc).fill(text);
   await expression(calc).press('Enter');
   return (await calc.locator('#result').textContent()).trim();
 }
+// Click a mode tab (Calculate, Graph, Matrix, Logic) by its accessible name.
 async function mode(calc, name) { await calc.getByRole('tab', { name, exact: true }).click(); }
 // Observe real canvas draw calls without replacing their behavior.
 async function recordCanvas(page) {
@@ -57,6 +74,9 @@ async function recordCanvas(page) {
     }
   });
 }
+// Test harness: each check gets a fresh browser context (clean localStorage and
+// downloads), records canvas drawing calls, collects console/page errors and
+// fails the test if ANY browser error appeared, even when assertions passed.
 async function check(name, fn) {
   const context = await browser.newContext({ viewport: { width: 1280, height: 900 }, acceptDownloads: true });
   const page = await context.newPage();
@@ -87,6 +107,8 @@ try {
     assert.equal(await calc.evaluate(el => Boolean(el.shadowRoot)), true);
     assert.ok(await calc.locator('button').count() > 0, 'Component has interactive controls');
   });
+  // Runs every function's documented example through the real component and
+  // audits the resulting history entries.
   await check('every registered function executes through the UI and survives full JSON log audit', async ({ calc, page }) => {
     const { FUNCTIONS } = await import(pathToFileURL(resolve(root, 'engine.js')).href);
     const audit = await calc.evaluate((el, functions) => functions.map(fn => {
@@ -220,6 +242,7 @@ try {
     await calc.getByRole('button', { name: 'Close settings' }).click();
     assert.equal(await calc.locator('#settings').evaluate(el => el.open), false);
   });
+  // Hostile input must be treated as plain text and never executed.
   await check('injection stays inert, oversized input fails safely, recovery works', async ({ calc, page }) => {
     const payload = '<img src=x onerror="window.__injected=1">';
     await run(calc, payload);
@@ -255,6 +278,7 @@ try {
     await page.reload();
     assert.match(await calc.locator('#history-count').textContent(), /0/);
   });
+  // Narrow (phone-width) viewport layout check.
   await check('360px responsive layout across modes and dialogs', async ({ calc, page }) => {
     await page.setViewportSize({ width: 360, height: 800 });
     if (process.env.CAPTURE_SCREENSHOTS) await page.screenshot({ path: '/tmp/extreme-verification-mobile.png', fullPage: true });
@@ -270,6 +294,7 @@ try {
     const box = await calc.locator('#help').boundingBox();
     assert.ok(box.x >= 0 && box.x + box.width <= 360);
   });
+  // Two elements on one page must not share state.
   await check('multiple components retain independent expressions, modes, answers and logs', async ({ page, calc }) => {
     await page.evaluate(() => document.body.append(document.createElement('extreme-calculator')));
     const second = page.locator('extreme-calculator').nth(1);
@@ -312,6 +337,7 @@ try {
     assert.ok(stored.some(e => e.kind === 'graph' && e.ok));
     assert.ok(stored.some(e => e.kind === 'graph' && !e.ok));
   });
+  // tan-like curves must not draw a line across the asymptote.
   await check('graph discontinuity does not bridge the reciprocal asymptote', async ({ calc, page }) => {
     await mode(calc, 'Graph');
     await calc.getByRole('textbox', { name: 'Curve 1', exact: true }).fill('1/(x-0.037)');
@@ -448,6 +474,7 @@ try {
     assert.equal(await run(sessionOnly, 'ans+1'), '43');
     assert.match(await sessionOnly.locator('#history-count').textContent(), /^2 runs$/);
   });
+  // Per-curve sampling is time-boxed so heavy graphs must not freeze the page.
   await check('expensive three-curve graphs yield promptly and calculator recovers', async ({ calc, page }) => {
     await mode(calc, 'Graph');
     const matrix = Array.from({ length: 14 }, (_, i) => Array.from({ length: 14 }, (_, j) => i === j ? 2 : 1));
@@ -468,6 +495,7 @@ try {
     await page.keyboard.press('Escape');
     await calc.locator('#help').waitFor({ state: 'hidden' });
   });
+  // The single-file dist build must work from file:// with no network.
   await check('standalone file:// build calculates, graphs, exports and needs no network', async ({ page }) => {
     const standalone = resolve(root, 'dist/extreme-calculator.html');
     await stat(standalone);
