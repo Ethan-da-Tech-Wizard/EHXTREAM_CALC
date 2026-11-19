@@ -5,10 +5,14 @@
 // Purpose: Comprehensive unit test suite for the mathematical evaluation engine,
 //          verifying arithmetic precedence, trigonometry, matrix operations, and limits.
 // ==============================================================================
+// Uses Node's built-in test runner and strict assertions: no test dependencies.
+// Run with `npm test` (node --test engine.test.js). Everything here is offline.
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { evaluate, formatValue, FUNCTIONS } from './engine.js';
 
+// Approximate equality helper for floats (relative tolerance, scaled by the
+// expected magnitude), applied recursively to arrays so matrices can be compared.
 function close(actual, expected, tolerance = 1e-12) {
   if (Array.isArray(expected)) {
     assert.ok(Array.isArray(actual));
@@ -20,6 +24,10 @@ function close(actual, expected, tolerance = 1e-12) {
     assert.ok(Math.abs(actual - expected) <= tolerance * Math.max(1, Math.abs(expected)), `${actual} != ${expected}`);
   }
 }
+// One golden expression and expected value per engine function. The test below
+// asserts this table covers exactly the functions in FUNCTIONS, so adding a
+// function without a test (or documenting a missing one) fails the suite.
+// Evaluated in degree mode, which is why sin(30) = 0.5.
 const cases = {
   sin: ['sin(30)', 0.5], cos: ['cos(60)', 0.5], tan: ['tan(45)', 1],
   sec: ['sec(60)', 2], csc: ['csc(30)', 2], cot: ['cot(45)', 1],
@@ -44,6 +52,9 @@ test('documentation and numerical coverage include every function exactly once',
   assert.equal(new Set(FUNCTIONS.map(f => f.name)).size, FUNCTIONS.length);
   assert.ok(Object.isFrozen(FUNCTIONS));
 });
+// Generated per-function checks: documentation fields are strings, the golden
+// case matches, the documented example evaluates and formats, and calling with
+// no arguments or with 257 arguments is rejected (arity bounds).
 for (const fn of FUNCTIONS) {
   test(`${fn.name}: numerical result, documented example, wrong arity`, () => {
     for (const key of ['name', 'syntax', 'description', 'example']) assert.equal(typeof fn[key], 'string');
@@ -222,6 +233,8 @@ test('formatting uses significant precision and rejects nonfinite/invalid data',
 });
 
 // Reproducible 32-bit LCG; each property owns its seed and fixed sample budget.
+// Small deterministic PRNG (LCG) so "random" property tests are reproducible
+// and a failure can be replayed from the seed.
 function seededRandom(seed) {
   let state = seed >>> 0;
   return () => {
@@ -229,6 +242,8 @@ function seededRandom(seed) {
     return state / 4294967296;
   };
 }
+// Radians-per-unit scale factors used to express the same angle in rad, deg and
+// grad when checking that all three modes agree.
 const angleScales = [['rad', 1], ['deg', 180 / Math.PI], ['grad', 200 / Math.PI]];
 
 test('seeded property: 600 bounded angles agree across units and reciprocal identities', () => {
@@ -305,6 +320,9 @@ test('seeded property: 400 invertible 2x2 matrices satisfy both inverse products
   assert.ok(positive > 100 && negative > 100 && pivotSwaps > 100);
 });
 
+// Fuzz: build valid expressions, corrupt them with known-bad mutations (unbalanced
+// parentheses, bad literals, stray symbols, __proto__) and require a plain Error
+// with a message, never an internal exception type or a crash.
 test('seeded property: 1200 malformed mutations reject and 1000 bounded random strings remain safe', () => {
   const random = seededRandom(0xF022);
   const pick = values => values[Math.floor(random()*values.length)];
