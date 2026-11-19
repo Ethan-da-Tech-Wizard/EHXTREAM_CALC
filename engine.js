@@ -5,7 +5,40 @@
 // Purpose: Dependency-free, bounded mathematical evaluator supporting arithmetic precedence,
 //          trigonometric operations across angle units (deg, rad, grad), matrix linear algebra,
 //          and 32-bit bitwise logic operations without code execution risks.
+//
+// How it fits: this is the whole math core of the project and has no DOM dependency.
+//   - calculator.js (the <extreme-calculator> web element) imports evaluate/formatValue/
+//     FUNCTIONS from here for every keypress and graph sample.
+//   - index.d.ts describes this file's three exports for TypeScript users; package.json's
+//     "." export points straight at this file.
+//   - scripts/build.mjs bundles it with calculator.js into dist/ (generated; never edit it).
+//   - engine.test.js exercises it directly under `node --test`.
+//
+// Public API (exactly three exports):
+//   evaluate(expression, {angle, variables}) -> number | number[] | number[][]
+//   formatValue(value, precision)            -> string
+//   FUNCTIONS                                 -> frozen list of {name, syntax, description, example}
+//
+// Pipeline for one evaluate() call: tokenize() (cached) -> recursive-descent parse that
+//   computes values AS IT PARSES (there is no AST) -> shape() validation of the result.
+//   Because values are computed during parsing, every limit below is enforced inline.
+//
+// Design decisions: (1) no eval/new Function, so untrusted text cannot execute code;
+//   (2) every number passes through finite(), so NaN/Infinity can never be returned;
+//   (3) hard caps (LIMITS) bound CPU and recursion; (4) the function registry has a null
+//   prototype and variables are restricted to `x` and `ans`, so user text cannot reach
+//   Object.prototype members; (5) errors are plain Error objects with user-readable text.
+//
+// Known limits: matrices are at most 16x16, expressions at most 16384 characters; complex
+//   numbers are unsupported; `%` is a scalar remainder with the sign of the dividend (JS
+//   semantics); trig of exact multiples of pi shows normal floating-point residue.
+//
+// Test: `npm test` (node --test engine.test.js). All code here is synchronous and pure
+//   apart from the module-level token cache.
 // ==============================================================================
+// ---------------------------------------------------------------------------
+// Section 1: resource limits and value validators
+// ---------------------------------------------------------------------------
 // Hard resource caps that make evaluation safe on untrusted input (there is no
 // eval/Function anywhere in this file):
 //   length    - max characters in an expression
@@ -13,9 +46,14 @@
 //   depth     - max nesting of parentheses/unary/array/call recursion
 //   dimension - max entries per array dimension (so matrices are <= 16x16)
 //   work      - max "spend" units (roughly arithmetic steps) per evaluate() call
+// Defaults chosen empirically: 16 per dimension keeps a matrix product at 4096
+// multiply-adds, well inside the 100000 work budget, while 64 nesting levels is far below
+// the JS stack limit so a deep expression fails with our message, not a RangeError.
 const LIMITS = Object.freeze({ length: 16384, tokens: 2048, depth: 64, dimension: 16, work: 100000 });
 // Single failure path: every validation error is a plain Error with a message
 // meant to be shown directly to the calculator user.
+// Throws instead of returning an error value, so an inner failure aborts the whole parse at
+// once; used as an expression (`cond ? x : fail(..)`) by the validators below.
 const fail = message => { throw new Error(message); };
 // Guard applied to every intermediate result: NaN, +-Infinity and non-numbers
 // (domain errors, overflow, division results) abort evaluation immediately
@@ -33,6 +71,13 @@ const integer = value => Number.isSafeInteger(scalar(value)) ? value : fail('Exp
 const positive = value => scalar(value) > 0 ? value : fail('Expected a positive number');
 const nonnegative = value => scalar(value) >= 0 ? value : fail('Expected a nonnegative number');
 const isArray = Array.isArray;
+/**
+ * Validates a value and returns its shape.
+ * @param {unknown} value - scalar, vector, or matrix.
+ * @returns {number[]} [] (scalar), [n] (vector) or [rows, cols] (matrix).
+ * @throws {Error} on non-finite entries, ragged rows, empty or over-16 dimensions. Only
+ *   two nesting levels are inspected, so 3-D arrays are rejected by the rectangular check.
+ */
 // Validate a value and return its shape: [] for a scalar, [n] for a vector,
 // [rows, cols] for a rectangular matrix. Every entry must be a finite number
 // and each dimension must be within LIMITS.dimension. Throws otherwise, so
@@ -52,6 +97,16 @@ function shape(value) {
   }
   return [value.length, width];
 }
+
+// ---------------------------------------------------------------------------
+// Section 2: array and linear-algebra helpers (all of them validate with shape())
+// ---------------------------------------------------------------------------
+/**
+ * @param {unknown} value - candidate matrix.
+ * @param {boolean} [square=false] - also require rows === cols (needed for det/inverse).
+ * @returns {number[]} [rows, cols].
+ * @throws {Error} if it is not a matrix (or not square when requested).
+ */
 // Assert `value` is a matrix (optionally square) and return its shape.
 function matrix(value, square = false) {
   const s = shape(value);
@@ -77,6 +132,15 @@ function zip(a, b, fn) {
 // Multiplication: scalar*anything scales element-wise; otherwise a true matrix
 // product (m x n)(n x q). ctx.spend() is called per multiply-add so large
 // products count toward the work limit.
+/**
+ * @param {number|number[]|number[][]} a - left operand.
+ * @param {number|number[]|number[][]} b - right operand.
+ * @param {{spend: () => void}} ctx - evaluation context; spend() is charged once per
+ *   multiply-add so a 16x16 times 16x16 product (4096 steps) is bounded by LIMITS.work.
+ * @returns {number|number[]|number[][]} scaled value or matrix product. Note vectors are
+ *   rejected in vector*vector products: matrix() needs 2-D arrays, so use dot() instead.
+ * @throws {Error} on inner-dimension mismatch or non-finite intermediate results.
+ */
 function product(a, b, ctx) {
   if (!isArray(a)) return map(b, v => scalar(a) * v);
   if (!isArray(b)) return map(a, v => v * scalar(b));
@@ -99,20 +163,34 @@ function product(a, b, ctx) {
  * if a diagonal pivot is close to zero. Partial pivoting scans column entries to locate the
  * row with maximum absolute pivot magnitude, swapping rows to preserve numerical precision.
  * Singular / ill-conditioned detection compares pivot magnitude against machine epsilon (Number.EPSILON * n * scale).
+ *
+ * @param {number[][]} value - square matrix, at most 16x16 (copied; the input is never mutated).
+ * @param {boolean} invert - false returns the determinant, true returns the inverse.
+ * @param {{spend: () => void}} ctx - charged once per inner-loop update (work limit).
+ * @returns {number|number[][]} determinant, or the inverse matrix.
+ * @throws {Error} if the matrix is not square, an inverse is requested of a singular or
+ *   numerically singular matrix, or a value overflows. A singular matrix gives determinant 0
+ *   (no throw) because that is a valid answer for det().
  */
 function elimination(value, invert, ctx) {
   const [n] = matrix(value, true);
   const a = value.map(row => row.slice());
   const identity = Array.from({ length: n }, (_, i) => Array.from({ length: n }, (_, j) => +(i === j)));
   let determinant = 1;
+  // Largest magnitude entry: scales the singularity threshold so a matrix of tiny numbers is
+  // not wrongly called singular (and a matrix of huge numbers is not wrongly called regular).
   const scale = Math.max(...a.flat().map(Math.abs));
   for (let col = 0; col < n; col++) {
+    // Partial pivoting: pick the row at or below `col` with the largest |entry| in this
+    // column to keep the divisor as far from zero as possible.
     let pivot = col;
     for (let row = col + 1; row < n; row++) if (Math.abs(a[row][col]) > Math.abs(a[pivot][col])) pivot = row;
     if (a[pivot][col] === 0 || (invert && Math.abs(a[pivot][col]) <= Number.EPSILON * n * scale)) {
       if (invert) fail('Matrix is singular or numerically ill-conditioned');
       return 0;
     }
+    // Swapping rows flips the determinant's sign; the identity half is swapped in lockstep
+    // so it keeps recording the same row operations (needed only when inverting).
     if (pivot !== col) {
       [a[pivot], a[col]] = [a[col], a[pivot]];
       [identity[pivot], identity[col]] = [identity[col], identity[pivot]];
@@ -120,9 +198,12 @@ function elimination(value, invert, ctx) {
     }
     const divisor = a[col][col];
     if (!invert) determinant = finite(determinant * divisor);
+    // Gauss-Jordan: normalise the pivot row so the pivot becomes 1, in both halves.
     if (invert) {
       for (let j = 0; j < n; j++) { ctx.spend(); a[col][j] = finite(a[col][j] / divisor); identity[col][j] = finite(identity[col][j] / divisor); }
     }
+    // Eliminate this column from other rows: only rows BELOW for a determinant (upper
+    // triangular is enough), ALL other rows for an inverse (reduces A to the identity).
     for (let row = invert ? 0 : col + 1; row < n; row++) {
       if (row === col) continue;
       const factor = invert ? a[row][col] : finite(a[row][col] / divisor);
@@ -136,7 +217,11 @@ function elimination(value, invert, ctx) {
   }
   return invert ? identity : determinant;
 }
-// 170! is the largest factorial representable as a finite double, hence the cap.
+/**
+ * @param {number} value - nonnegative integer; 0 to 170 inclusive.
+ * @returns {number} value!. 171! overflows a double, hence the cap of 170.
+ * @throws {Error} for negatives, non-integers or values above 170.
+ */
 function factorial(value) {
   const n = integer(nonnegative(value));
   if (n > 170) fail('Factorial exceeds the finite number range');
@@ -148,6 +233,14 @@ function factorial(value) {
 // overflow. For combinations r is replaced by min(r, n-r) since C(n,r)=C(n,n-r),
 // which keeps the loop short. The result is rounded when it is still a safe
 // integer, to remove floating-point residue from the divisions.
+/**
+ * @param {number} n - nonnegative integer.
+ * @param {number} r - integer with 0 <= r <= n.
+ * @param {boolean} permute - true gives nPr, false gives nCr.
+ * @param {{spend: () => void}} ctx - charged once per loop step.
+ * @returns {number} the count (rounded to an exact integer when it is a safe integer).
+ * @throws {Error} on invalid arguments, r over 1000 (work cap) or float overflow.
+ */
 function combinations(n, r, permute, ctx) {
   integer(nonnegative(n)); integer(nonnegative(r));
   if (r > n) fail('Require 0 <= r <= n');
@@ -163,6 +256,16 @@ function combinations(n, r, permute, ctx) {
 const registry = Object.create(null);
 // Register one callable. `run` receives (argsArray, ctx) where ctx carries the
 // angle conversion factor and the work counter.
+/**
+ * @param {string} name - function name as typed by users (lower case).
+ * @param {string} syntax - signature shown in the help list, e.g. 'log(x, base=10)'.
+ * @param {string} description - one-line help text.
+ * @param {string} example - sample expression; the test suite evaluates every example.
+ * @param {number} min - minimum argument count.
+ * @param {number} max - maximum argument count.
+ * @param {(args: Array, ctx: object) => number|number[]|number[][]} run - implementation.
+ * @returns {void} adds the entry to `registry` (and so to FUNCTIONS and the parser).
+ */
 function define(name, syntax, description, example, min, max, run) {
   registry[name] = { name, syntax, description, example, min, max, run };
 }
@@ -232,6 +335,11 @@ unary('factorial', 'Factorial of an integer from 0 through 170; also x!.', 'fact
 for (const name of ['ncr', 'npr']) define(name, `${name}(n, r)`, `Number of ${name === 'ncr' ? 'combinations' : 'permutations'}; integers 0 <= r <= n.`, `${name}(5, 2)`, 2, 2, ([n, r], ctx) => combinations(n, r, name === 'npr', ctx));
 // Accept either variadic numbers (min(1,2,3)) or one array (min([1,2,3])); a
 // nested array is flattened. Every entry must be a finite number.
+/**
+ * @param {Array} args - raw call arguments: either numbers or a single (nested) array.
+ * @returns {number[]} flat list of finite numbers (at least one).
+ * @throws {Error} when empty or when any entry is not a finite scalar.
+ */
 function items(args) {
   const values = args.length === 1 && isArray(args[0]) ? args[0].flat() : args;
   if (!values.length) fail('Expected at least one number');
@@ -262,6 +370,11 @@ define('norm', 'norm(array)', 'Euclidean vector norm or Frobenius matrix norm.',
 // Bitwise operators work on 32-bit integers. Accepts the signed (-2^31..2^31-1)
 // and unsigned (up to 2^32-1) ranges and normalises with `| 0` to a signed
 // 32-bit value, matching JavaScript's own bitwise semantics.
+/**
+ * @param {number} value - integer from -2147483648 to 4294967295.
+ * @returns {number} the same bit pattern as a signed 32-bit integer (4294967295 becomes -1).
+ * @throws {Error} for non-integers or values that do not fit 32 bits.
+ */
 function bits(value) {
   integer(value);
   if (value < -2147483648 || value > 4294967295) fail('Bitwise input must fit 32 bits');
@@ -283,7 +396,16 @@ export const FUNCTIONS = Object.freeze(Object.values(registry).map(({ name, synt
 
 // Small bounded LRU cache avoids rescanning expressions for graph samples.
 const tokenCache = new Map();
-// Step 1: Lexical analysis converting mathematical string into bounded token stream
+/**
+ * Lexer: splits an expression into tokens (numbers, identifiers, punctuation, then 'end').
+ * Results are cached (see tokenCache) and the SAME array is returned on a hit, so callers
+ * must treat tokens as read-only; evaluate() does.
+ *
+ * @param {string} expression - non-empty text, at most LIMITS.length (16384) characters.
+ * @returns {Array<{type: string, value?: (number|string)}>} tokens ending with {type:'end'}.
+ * @throws {Error} on a non-string or empty input, unexpected characters, malformed numeric
+ *   literals (0b102, 1.2.3) or more than LIMITS.tokens (2048) tokens.
+ */
 function tokenize(expression) {
   if (typeof expression !== 'string' || !expression.trim()) fail('Expression must be a nonempty string');
   if (expression.length > LIMITS.length) fail('Expression length limit exceeded');
@@ -299,6 +421,8 @@ function tokenize(expression) {
     const c = expression[i];
     if (/\s/.test(c)) { i++; continue; }
     if (tokens.length >= LIMITS.tokens) fail('Token limit exceeded');
+    // `rest` lets each anchored (^) regex test the text at the cursor only. Slicing per token
+    // is O(n^2) in the worst case, which the 16384-character cap keeps affordable.
     const rest = expression.slice(i);
     let match;
     // Binary (0b...) and hex (0x...) literals. A literal glued to more word
@@ -328,9 +452,9 @@ function tokenize(expression) {
   return tokens;
 }
 
-/** Evaluate a real-valued expression. Default angle mode: radians. x is a finite scalar; ans may also be a vector or matrix. */
-// Step 3: Evaluate expression with execution limits (max operations, recursion depth)
 /**
+ * Evaluate a real-valued expression. Default angle mode: radians. x is a finite scalar; ans may also be a vector or matrix.
+ *
  * Recursive Descent Mathematical Evaluator
  * Evaluates an infix expression through predictive recursive descent parsing:
  *   add (precedence 1: +, -)
@@ -342,6 +466,14 @@ function tokenize(expression) {
  * Safety & Denial of Service Defense:
  * Tracks recursion call depth (depth limit 64) and operation counts (work limit 100,000)
  * to prevent stack overflow from deeply nested parentheses and CPU exhaustion from matrix operations.
+ *
+ * @param {string} expression - the text to evaluate; implicit multiplication (2pi, 3(4)) is
+ *   supported, `!` is postfix factorial, `^` is right-associative power.
+ * @param {{angle?: 'deg'|'rad'|'grad', variables?: {x?: number, ans?: (number|number[]|number[][])}}} [options]
+ *   angle defaults to 'rad'. Only the own data properties `x` and `ans` of `variables` are read.
+ * @returns {number|number[]|number[][]} a finite scalar, a vector or a matrix.
+ * @throws {Error} with a user-readable message for any syntax, domain, limit or type error.
+ *   evaluate never throws non-Error values and has no side effects beyond the token cache.
  */
 export function evaluate(expression, options = {}) {
   if (!options || typeof options !== 'object' || isArray(options)) fail('Options must be an object');
@@ -360,12 +492,17 @@ export function evaluate(expression, options = {}) {
       else scope[name] = scalar(descriptor.value);
     }
   }
+  // Parser state shared by the closures below: `pos` is the cursor into `tokens`, `depth` the
+  // current recursion depth and `work` the running cost against LIMITS.work.
   const tokens = tokenize(expression);
   let pos = 0, depth = 0, work = 0;
   // toRadians converts the selected angle unit to radians (deg: pi/180, grad:
   // pi/200, rad: 1). spend() is the shared work counter used by all heavy loops.
   const ctx = { toRadians: angle === 'deg' ? Math.PI / 180 : angle === 'grad' ? Math.PI / 200 : 1,
     spend() { if (++work > LIMITS.work) fail('Evaluation work limit exceeded'); } };
+  // peek: type of the next token without consuming it. take: consume it if it matches.
+  // expect: consume or fail with the 1-based token index (the 'end' token guarantees that
+  // tokens[pos] always exists, so peek never reads past the array).
   const peek = () => tokens[pos].type;
   const take = type => { if (peek() === type) { pos++; return true; } return false; };
   const expect = type => { if (!take(type)) fail(`Expected '${type}' at token ${pos + 1}`); };
@@ -375,7 +512,8 @@ export function evaluate(expression, options = {}) {
     if (++depth > LIMITS.depth) fail('Expression nesting limit exceeded');
     try { ctx.spend(); return fn(); } finally { depth--; }
   }
-  // Lowest precedence: left-associative + and -, applied element-wise.
+  // Lowest precedence: left-associative + and -, applied element-wise. Grammar:
+  //   add := multiply (('+' | '-') multiply)*
   function add() {
     let a = multiply();
     while (peek() === '+' || peek() === '-') {
@@ -384,6 +522,7 @@ export function evaluate(expression, options = {}) {
     }
     return a;
   }
+  // multiply := unaryExpression (('*' | '/' | '%' | implicit) unaryExpression)*
   // Handles explicit * / % and also implicit multiplication: a number, name, '('
   // or '[' directly after an operand multiplies (so 2pi and 3(4) work). Division
   // and modulo require a nonzero scalar divisor.
@@ -402,7 +541,8 @@ export function evaluate(expression, options = {}) {
     }
     return a;
   }
-  // Prefix + and -; recursion allows chains such as --x.
+  // unaryExpression := ('+' | '-') unaryExpression | power. Prefix + and -; recursion allows
+  // chains such as --x. Because ^ is handled below this level, -2^2 is -(2^2) = -4.
   function unaryExpression() {
     return nested(() => {
       if (take('+')) return unaryExpression();
@@ -410,6 +550,7 @@ export function evaluate(expression, options = {}) {
       return power();
     });
   }
+  // power := primary '!'* ('^' unaryExpression)?
   // Postfix factorial binds tighter than ^. The exponent is parsed with
   // unaryExpression, which makes ^ right-associative and allows 2^-3.
   function power() {
@@ -418,6 +559,7 @@ export function evaluate(expression, options = {}) {
     if (take('^')) a = finite(scalar(a) ** scalar(unaryExpression()));
     return a;
   }
+  // primary := number | '(' add ')' | '[' add (',' add)* ']' | name '(' args ')' | constant | variable.
   // Atoms: numbers, parenthesised expressions, [array literals], function calls,
   // the constants pi/e/tau, and the variables x/ans. Unknown names are errors.
   function primary() {
@@ -460,7 +602,14 @@ export function evaluate(expression, options = {}) {
   return result;
 }
 
-/** Format scalars, vectors, and matrices with 1–100 significant digits. */
+/**
+ * Format scalars, vectors, and matrices with 1–100 significant digits.
+ *
+ * @param {number|number[]|number[][]} value - value to print; validated with shape().
+ * @param {number} [precision=12] - significant digits, integer 1 to 100.
+ * @returns {string} e.g. '0.3', '[1, 2]', '[[1, 2], [3, 4]]'.
+ * @throws {Error} for a bad precision or an invalid/non-finite value.
+ */
 // Format with toPrecision then re-parse through Number so trailing zeros and
 // needless exponents are dropped (e.g. 0.30000000000 -> 0.3).
 export function formatValue(value, precision = 12) {

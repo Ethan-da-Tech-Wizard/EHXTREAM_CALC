@@ -4,6 +4,24 @@
 // Last Modified: November 18, 2026
 // Purpose: Playwright/Chromium UI automation suite validating calculator web component
 //          rendering, DOM state transitions, canvas plots, and dialog interactions.
+//
+// How it fits: this is the end-to-end test for calculator.js (the <extreme-calculator>
+//   element) and for the single-file build in dist/. engine.test.js covers the maths; this
+//   file only checks that the UI wires the engine up correctly. It is NOT part of `npm test`
+//   (that runs engine.test.js only); run it explicitly with `npm run test:browser`.
+//
+// Requirements: Playwright and a Chromium binary, both installed OUTSIDE the repo (see the
+//   usage note below), so the project keeps zero dependencies. Defaults assume a Linux box:
+//   the Playwright module under /tmp/extreme-browser-verification and /usr/bin/chromium.
+//   On macOS set PLAYWRIGHT_MODULE and CHROMIUM_PATH. It cannot run in an offline checkout.
+//
+// Side effects to know about: the first check writes verification/function-audit.json into
+//   the repo, and CAPTURE_SCREENSHOTS=1 writes PNGs under /tmp. Exit code is 1 if any check
+//   failed, 0 otherwise.
+//
+// Harness design: every check() gets a brand-new browser context (so localStorage and
+//   downloads never leak between checks) and fails if ANY page or console error occurs,
+//   because a silent UI exception is as bad as a wrong value.
 // ==============================================================================
 /** Independent Chromium UI verification.
  * npm install --prefix /tmp/extreme-browser-verification playwright
@@ -100,15 +118,25 @@ async function check(name, fn) {
   } finally { await context.close(); }
 }
 
+// Everything runs inside try/finally so the browser and the static server are always shut
+// down, even when an unexpected exception escapes a check.
 try {
   // The component must be ready before its UI contracts can be inspected.
   for (const name of ['index.html', 'calculator.js', 'engine.js']) await stat(resolve(root, name));
+
+  // Smoke test: the element upgrades and renders interactive controls inside its open shadow
+  // root. If this fails every later check is meaningless, so it comes first.
   await check('custom element mounts its shadow DOM', async ({ calc }) => {
     assert.equal(await calc.evaluate(el => Boolean(el.shadowRoot)), true);
     assert.ok(await calc.locator('button').count() > 0, 'Component has interactive controls');
   });
   // Runs every function's documented example through the real component and
   // audits the resulting history entries.
+
+  // Audit: runs every documented function example through the real component and verifies the
+  // displayed text, the single history entry per run (angle, timestamp, kind), the JSON export
+  // and that the full log survives a page reload. The 47 floor guards against the registry
+  // silently shrinking. Writes verification/function-audit.json as a human-readable record.
   await check('every registered function executes through the UI and survives full JSON log audit', async ({ calc, page }) => {
     const { FUNCTIONS } = await import(pathToFileURL(resolve(root, 'engine.js')).href);
     const audit = await calc.evaluate((el, functions) => functions.map(fn => {
@@ -162,6 +190,9 @@ try {
     }, null, 2) + '\n');
     console.log(`  Audited all ${FUNCTIONS.length} function examples, exported entries and persisted reload`);
   });
+
+  // Privacy promise: loading the demo page must trigger no request to any origin other than the
+  // local test server (blob: URLs from export are allowed). Optionally takes a screenshot.
   await check('desktop screenshot and local-only document requests', async ({ page }) => {
     const external = [];
     page.on('request', req => { if (!req.url().startsWith(baseURL) && !req.url().startsWith('blob:')) external.push(req.url()); });
@@ -170,6 +201,10 @@ try {
     if (process.env.CAPTURE_SCREENSHOTS) await page.screenshot({ path: '/tmp/extreme-verification-desktop.png', fullPage: true });
     assert.deepEqual(external, []);
   });
+
+  // Typed-input path: precedence, `ans` reuse, switching between DEG/RAD/GRAD with the toolbar,
+  // factorial and sqrt, and that a domain error shows in the error style but does not stop the
+  // next calculation from working.
   await check('scientific expressions, errors, angle modes and answer reuse', async ({ calc }) => {
     assert.equal(await run(calc, '(2+3)*4'), '20');
     assert.equal(await run(calc, 'ans/2'), '10');
@@ -183,6 +218,10 @@ try {
     assert.ok(await calc.locator('#result').evaluate(el => el.classList.contains('error')));
     assert.equal(await run(calc, '6*7'), '42');
   });
+
+  // Keypad path: clicking keys builds an expression, Clear empties it, ArrowUp recalls the
+  // previous expression, Backspace trims one character, a keypad insert lands at the cursor
+  // (12 with the caret after the 1 becomes 132) and arrow keys move between tabs.
   await check('keypad, insertion, backspace, clear, keyboard recall and tab navigation', async ({ calc }) => {
     for (const key of ['2', '+', '3', 'Calculate']) await calc.getByRole('button', { name: key, exact: true }).click();
     assert.equal(await calc.locator('#result').textContent(), '5');
@@ -200,6 +239,10 @@ try {
     await tab.focus(); await tab.press('ArrowRight');
     assert.equal(await calc.getByRole('tab', { name: 'Graph', exact: true }).getAttribute('aria-selected'), 'true');
   });
+
+  // Matrix and Logic tabs: the Determinant and AND keypad buttons insert working examples,
+  // a matrix product renders as a grid of numbers, a singular inverse shows a 'singular'
+  // error, and the Logic readout shows the binary form (1000 for 8) next to the decimal.
   await check('matrix and binary logic modes and examples', async ({ calc }) => {
     await mode(calc, 'Matrices');
     await calc.getByRole('button', { name: 'Determinant', exact: true }).click();
@@ -216,6 +259,9 @@ try {
     assert.equal(await run(calc, 'shl(1,4)'), '16');
     assert.equal(await run(calc, 'not(0)'), '-1');
   });
+
+  // Help dialog: search filtering, example chips, Escape and close icons dismiss it and focus
+  // returns to the control that opened it (an accessibility requirement).
   await check('help search, examples, dialog Escape, close icons and focus return', async ({ calc, page }) => {
     const help = calc.getByRole('button', { name: 'Open help', exact: true });
     await help.click();
@@ -243,6 +289,10 @@ try {
     assert.equal(await calc.locator('#settings').evaluate(el => el.open), false);
   });
   // Hostile input must be treated as plain text and never executed.
+
+  // Security: markup typed as an expression stays text (no <img> is created, onerror never
+  // fires), a 10001-character input (over the engine's token cap) fails with a normal error
+  // instead of hanging, and the calculator keeps working afterwards.
   await check('injection stays inert, oversized input fails safely, recovery works', async ({ calc, page }) => {
     const payload = '<img src=x onerror="window.__injected=1">';
     await run(calc, payload);
@@ -254,6 +304,9 @@ try {
     assert.ok(await calc.locator('#result').evaluate(el => el.classList.contains('error')));
     assert.equal(await run(calc, '2+2'), '4');
   });
+
+  // History: successes and failures are both logged, the log persists across reloads via
+  // storage-key, an entry can be reused, the JSON export downloads and Clear empties it.
   await check('history logs successes and failures, persists, reuses, exports, and clears', async ({ calc, page }) => {
     await run(calc, '17*19');
     await run(calc, 'sqrt(-1)');
@@ -279,6 +332,9 @@ try {
     assert.match(await calc.locator('#history-count').textContent(), /0/);
   });
   // Narrow (phone-width) viewport layout check.
+
+  // Responsive: at a 360px wide phone viewport no mode or dialog causes horizontal page
+  // scrolling and the card and canvas stay fully inside the viewport.
   await check('360px responsive layout across modes and dialogs', async ({ calc, page }) => {
     await page.setViewportSize({ width: 360, height: 800 });
     if (process.env.CAPTURE_SCREENSHOTS) await page.screenshot({ path: '/tmp/extreme-verification-mobile.png', fullPage: true });
@@ -295,6 +351,9 @@ try {
     assert.ok(box.x >= 0 && box.x + box.width <= 360);
   });
   // Two elements on one page must not share state.
+
+  // Isolation: two elements on one page keep separate expressions, angle units, answers,
+  // modes and history lists; nothing is stored in module-level state.
   await check('multiple components retain independent expressions, modes, answers and logs', async ({ page, calc }) => {
     await page.evaluate(() => document.body.append(document.createElement('extreme-calculator')));
     const second = page.locator('extreme-calculator').nth(1);
@@ -308,6 +367,9 @@ try {
     await mode(second, 'Logic');
     assert.equal(await calc.getByRole('tab', { name: 'Calculator', exact: true }).getAttribute('aria-selected'), 'true');
   });
+
+  // Graph tab: plots through real canvas calls (recorded by recordCanvas), rejects invalid axis
+  // bounds with a message, logs plots, and supports zoom, pan, reset and trace.
   await check('graph rendering, bounds errors, plot logging, zoom, pan, reset and trace', async ({ page, calc }) => {
     await mode(calc, 'Graph');
     await calc.getByRole('textbox', { name: 'Curve 1', exact: true }).fill('x^2');
@@ -338,6 +400,10 @@ try {
     assert.ok(stored.some(e => e.kind === 'graph' && !e.ok));
   });
   // tan-like curves must not draw a line across the asymptote.
+
+  // Regression guard: 1/(x-0.037) must not draw a vertical line across its asymptote. The
+  // test records every lineTo and fails if consecutive points on opposite sides of the pole are
+  // joined. 0.037 is chosen so no sample lands exactly on the pole.
   await check('graph discontinuity does not bridge the reciprocal asymptote', async ({ calc, page }) => {
     await mode(calc, 'Graph');
     await calc.getByRole('textbox', { name: 'Curve 1', exact: true }).fill('1/(x-0.037)');
@@ -361,6 +427,9 @@ try {
     }
     assert.deepEqual(bridges, [], 'No near-vertical segment bridges the asymptote');
   });
+
+  // Stress: 525 runs (the last one an error) submitted through the form must all be counted,
+  // paged 50 at a time with 'Show 50 more', and survive reload and export with no truncation.
   await check('stress: 525 submitted runs survive paging, reload and export without truncation', async ({ calc, page }) => {
     await calc.evaluate(el => {
       const input = el.shadowRoot.querySelector('#expression');
@@ -384,6 +453,10 @@ try {
     assert.equal(data.entries[0].expression, '0+1');
     assert.equal(data.entries.at(-1).ok, false);
   });
+
+  // Hostile storage: broken JSON produces a visible 'could not be loaded' notice and the app
+  // still works; stored history containing <svg onload>/<img onerror> is rendered as plain
+  // text and its scripts never run (window.__injected stays undefined).
   await check('corrupted or hostile local storage remains inert and usable', async ({ page, calc }) => {
     await page.evaluate(() => localStorage.setItem('extreme-demo', '{ broken json'));
     await page.reload();
@@ -396,6 +469,9 @@ try {
     assert.match(await calc.locator('#history-list').textContent(), /<svg onload=/);
     assert.equal(await run(calc, '7*6'), '42');
   });
+
+  // Failure mode: if localStorage.setItem throws QuotaExceededError the calculation still
+  // works, the UI warns that runs are unsaved, and the export still contains the run.
   await check('storage quota failure reports unsaved runs and preserves export', async ({ calc, page }) => {
     await page.evaluate(() => { Storage.prototype.setItem = function () { throw new DOMException('Quota exceeded', 'QuotaExceededError'); }; });
     assert.equal(await run(calc, '8*8'), '64');
@@ -406,6 +482,9 @@ try {
     const data = JSON.parse(await readFile(await downloaded.path(), 'utf8'));
     assert.equal(data.entries[0].expression, '8*8');
   });
+
+  // Accessibility: Tab cycles inside the open dialog (modal focus trap), help examples can be
+  // run, and the copy button puts the result on the clipboard.
   await check('dialog traps keyboard focus, help examples run, clipboard copies result', async ({ calc, page, context }) => {
     await calc.getByRole('button', { name: 'Open help', exact: true }).click();
     for (let i = 0; i < 14; i++) {
@@ -423,6 +502,10 @@ try {
     await calc.getByRole('button', { name: 'Copy result', exact: true }).click();
     assert.equal(await page.evaluate(() => navigator.clipboard.readText()), '246');
   });
+
+  // Graph edge cases: when every curve is invalid (sqrt(-1)) a message appears and a failed
+  // 'graph' entry is logged; then three curves plot with a legend, the legend's Reuse button
+  // copies a curve back into slot 1, dragging on the canvas pans the view and Zoom out widens it.
   await check('all-invalid graphs, third curve, graph reuse and pointer dragging', async ({ calc, page }) => {
     await mode(calc, 'Graph');
     await calc.getByRole('textbox', { name: 'Curve 1', exact: true }).fill('sqrt(-1)');
@@ -449,6 +532,10 @@ try {
     const zoomed = await calc.evaluate(el => ({ ...el.view }));
     assert.ok(zoomed.xmax - zoomed.xmin > after.xmax - after.xmin);
   });
+
+  // Settings dialog: chosen angle/precision persist, clicking the backdrop closes it, and
+  // removing then re-adding the element does not double-register event handlers
+  // (connectedCallback/disconnectedCallback symmetry).
   await check('settings persist, backdrop closes, and detach/reconnect avoids duplicate handlers', async ({ calc, page }) => {
     await calc.getByRole('button', { name: 'Open settings' }).click();
     await calc.getByRole('combobox', { name: 'Display precision' }).selectOption('6');
@@ -475,6 +562,10 @@ try {
     assert.match(await sessionOnly.locator('#history-count').textContent(), /^2 runs$/);
   });
   // Per-curve sampling is time-boxed so heavy graphs must not freeze the page.
+
+  // Responsiveness: three curves that each invert a 14x14 matrix per sample are expensive;
+  // the click handler must return control to the event loop within 1.5 seconds (bounded work
+  // per frame) and the calculator must keep working afterwards.
   await check('expensive three-curve graphs yield promptly and calculator recovers', async ({ calc, page }) => {
     await mode(calc, 'Graph');
     const matrix = Array.from({ length: 14 }, (_, i) => Array.from({ length: 14 }, (_, j) => i === j ? 2 : 1));
@@ -496,6 +587,10 @@ try {
     await calc.locator('#help').waitFor({ state: 'hidden' });
   });
   // The single-file dist build must work from file:// with no network.
+
+  // Distribution test: opens dist/extreme-calculator.html straight from disk (no server) and
+  // runs one calculation per mode plus graph, help and export, asserting no http(s) request is
+  // made. Requires `npm run build` to have produced dist/ first.
   await check('standalone file:// build calculates, graphs, exports and needs no network', async ({ page }) => {
     const standalone = resolve(root, 'dist/extreme-calculator.html');
     await stat(standalone);
@@ -527,5 +622,6 @@ try {
   await browser.close();
   await new Promise(resolve => server.close(resolve));
 }
+// Summary line and process exit status for CI: any failed check makes the run fail.
 console.log(`\n${results.filter(r => r.passed).length}/${results.length} browser checks passed`);
 if (results.some(r => !r.passed)) process.exitCode = 1;

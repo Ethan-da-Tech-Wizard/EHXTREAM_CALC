@@ -4,6 +4,19 @@
 // Last Modified: November 18, 2026
 // Purpose: Comprehensive unit test suite for the mathematical evaluation engine,
 //          verifying arithmetic precedence, trigonometry, matrix operations, and limits.
+//
+// How it fits: this suite imports only engine.js (the math core) and never touches the
+//   calculator.js UI; browser.test.mjs covers the UI. It is the `npm test` target, so CI
+//   and `npm run build` consumers rely on it staying green (64 tests at the time of writing).
+//
+// Structure: (1) a golden-value table with one case per engine function, (2) fixed example
+//   tests grouped by feature (precedence, angles, matrices, bitwise, errors, limits,
+//   formatting), and (3) seeded property tests that sweep a few thousand generated inputs
+//   with deterministic seeds so any failure replays identically.
+//
+// Conventions: tests assert on thrown Error cases by passing the offending expression as
+//   the assertion message, so a failure names the input that unexpectedly succeeded.
+//   No network, no files, no timers; the whole file runs in about a second.
 // ==============================================================================
 // Uses Node's built-in test runner and strict assertions: no test dependencies.
 // Run with `npm test` (node --test engine.test.js). Everything here is offline.
@@ -13,6 +26,16 @@ import { evaluate, formatValue, FUNCTIONS } from './engine.js';
 
 // Approximate equality helper for floats (relative tolerance, scaled by the
 // expected magnitude), applied recursively to arrays so matrices can be compared.
+// /**
+//  * Float-tolerant assertion, recursive over arrays so vectors and matrices can be checked.
+//  * Tolerance is relative for magnitudes above 1 and absolute below it (max(1, |expected|)),
+//  * which avoids demanding impossible precision for tiny expected values.
+//  *
+//  * @param {number|Array} actual - value returned by the engine.
+//  * @param {number|Array} expected - golden value; its shape decides how actual is compared.
+//  * @param {number} [tolerance=1e-12] - 2e-11 is used where an identity amplifies roundoff.
+//  * @returns {void} throws an AssertionError on mismatch, including non-finite actuals.
+//  */
 function close(actual, expected, tolerance = 1e-12) {
   if (Array.isArray(expected)) {
     assert.ok(Array.isArray(actual));
@@ -46,7 +69,9 @@ const cases = {
   and: ['and(0b1010,0b1100)', 8], or: ['or(0b1010,0b1100)', 14], xor: ['xor(0b1010,0b1100)', 6],
   not: ['not(0)', -1], shl: ['shl(3,2)', 12], shr: ['shr(-8,2)', -2],
 };
-// Step 1: Verify all exported functions have documented examples and matching unit tests
+// Meta-test: the golden table and the public FUNCTIONS list must contain exactly the same
+// names (no function untested, no stale test), names must be unique and the list frozen so
+// callers cannot mutate the shared documentation.
 test('documentation and numerical coverage include every function exactly once', () => {
   assert.deepEqual(FUNCTIONS.map(f => f.name).sort(), Object.keys(cases).sort());
   assert.equal(new Set(FUNCTIONS.map(f => f.name)).size, FUNCTIONS.length);
@@ -66,6 +91,12 @@ for (const fn of FUNCTIONS) {
   });
 }
 
+// Scenario: a table of [expression, expected] pairs covering the grammar. The interesting
+// rows: 2^3^2 = 512 and 2^-2^2 = 1/16 (right-associative power), -2^2 = -4 (unary minus
+// binds looser than ^), -5%3 = -2 (JS remainder keeps the dividend's sign), 3!^2 = 36 and
+// 2^3! = 64 (postfix ! binds tighter than ^), and implicit multiplication such as 2(3+4),
+// 2pi and 3e. Why it matters: these rules are what users expect from a calculator, and
+// the parser encodes them implicitly in the order of its recursive functions.
 test('arithmetic precedence, associativity, postfix factorial and implicit multiplication', () => {
   for (const [expression, expected] of [
     ['2+3*4',14], ['(2+3)*4',20], ['2^3^2',512], ['-2^2',-4], ['(-2)^2',4], ['2^-2',0.25],
@@ -76,6 +107,10 @@ test('arithmetic precedence, associativity, postfix factorial and implicit multi
   ]) close(evaluate(expression), expected);
 });
 
+// Scenario: for each angle unit, quarter/half turn values (pi/2, 90, 100 grad) are fed through
+// the forward and inverse trig functions. Verifies the unit conversion is symmetric,
+// atan2 returns the right quadrant (-3/4 of a half turn for (-1,-1)), tan at a quarter turn
+// is rejected as undefined, and hyperbolic functions ignore the angle unit.
 test('angle modes, inverse trig and quadrants', () => {
   for (const [angle, quarter, half] of [['rad',Math.PI/2,Math.PI], ['deg',90,180], ['grad',100,200]]) {
     const options = { angle, variables: { x: quarter } };
@@ -92,6 +127,10 @@ test('angle modes, inverse trig and quadrants', () => {
   close(evaluate('atan2(0,-1)', {angle:'deg'}), 180);
 });
 
+// Scenario: sec/csc/cot at fractions and multiples of a quarter turn (x/2, 2x, -x, 3x) in all three units, plus
+// identities (sec*cos = 1). Poles must throw an 'undefined' error rather than return a
+// huge value; 1e-15 offsets from a pole are also rejected (the 1e-14 denominator guard)
+// while csc(1e-8) = 1e8 is still allowed. Array arguments must be rejected as non-scalar.
 test('reciprocal trig honors all angle modes, quadrants and singularities', () => {
   for (const [angle, quarter] of [['rad', Math.PI/2], ['deg', 90], ['grad', 100]]) {
     const options = { angle, variables: { x: quarter } };
@@ -112,6 +151,9 @@ test('reciprocal trig honors all angle modes, quadrants and singularities', () =
   for (const name of ['sec','csc','cot']) assert.throws(() => evaluate(`${name}([1])`), /scalar/);
 });
 
+// Scenario: todeg/torad/dms ignore the selected angle mode. dms keeps the sign of the degrees
+// argument for the whole angle, including negative zero (dms(-0,30,0) = -0.5), and rejects
+// minutes or seconds outside [0, 60). Invalid arity, array inputs and overflow also throw.
 test('angle conversions and signed DMS are independent of angle mode', () => {
   for (const angle of ['rad', 'deg', 'grad']) {
     const options = { angle };
@@ -134,6 +176,10 @@ test('angle conversions and signed DMS are independent of angle mode', () => {
     'torad([1])','todeg([1])','todeg(1e308)']) assert.throws(() => evaluate(expr), expr);
 });
 
+// Scenario: 0x literals evaluate (any case, mixed digits), take part in arithmetic and
+// implicit multiplication, bitwise functions and matrices; malformed literals such as 0x,
+// 0xG, 0x1.2, 0xFF_00 or 300 digits that overflow a double must be rejected by the lexer.
+// Note 0x1e2 = 482: the `e` is a hex digit, not an exponent.
 test('hexadecimal literals support arithmetic, matrices, bitwise operations and reject malformed values', () => {
   for (const [expr, expected] of [['0xFF',255],['0Xff',255],['0xAbCd',43981],['0x0',0],
     ['-0x10',-16],['0x10^2',256],['0xF+0b1',16],['0x1e2',482],['0x10(2+1)',48],
@@ -146,6 +192,11 @@ test('hexadecimal literals support arithmetic, matrices, bitwise operations and 
   }
 });
 
+// Scenario: matrix multiply (2x3 by 3x2), element-wise +/-, scalar scaling and division,
+// det/inverse including a matrix whose first pivot is zero ([[0,1],[2,3]]), which only works
+// because of partial pivoting, singular matrices (det 0), norm as Frobenius, aggregates over
+// a matrix, and that evaluate() never mutates the caller's `ans` matrix (deepEqual to a
+// structuredClone snapshot).
 test('matrices, vectors, pivoting, scalar operations and immutable inputs', () => {
   const a = '[[1,2,3],[4,5,6]]', b = '[[7,8],[9,10],[11,12]]';
   close(evaluate(`${a}*${b}`), [[58,64],[139,154]]);
@@ -166,6 +217,10 @@ test('matrices, vectors, pivoting, scalar operations and immutable inputs', () =
   assert.deepEqual(ans, snapshot);
 });
 
+// Scenario: 600 repeated evaluations of the same expression with different x simulate the
+// graph renderer reusing the token cache; results must depend only on the variables passed.
+// Also checks the variable security rules: missing variables error, non-numeric or infinite
+// values are refused, inherited properties are ignored and getters are never invoked.
 test('variables and repeated cached graph samples are independent', () => {
   for (let x = -300; x < 300; x++) close(evaluate('x^2+ans', {variables:{x,ans:2}}), x*x+2);
   assert.throws(() => evaluate('x^2+ans', {variables:{x:1}}), /Unknown/);
@@ -179,6 +234,9 @@ test('variables and repeated cached graph samples are independent', () => {
   for (const options of [null, [], {angle:'turn'}, {variables:null}, {variables:[]}]) assert.throws(() => evaluate('1',options));
 });
 
+// Scenario: bitwise functions accept the signed and unsigned 32-bit ranges and give signed
+// results (or(0xFFFFFFFF,0) = -1, shl(1,31) = -2147483648); fractions, out-of-range inputs and
+// shift counts outside 0..31 must throw.
 test('binary operations validate ranges and preserve signed 32-bit behavior', () => {
   close(evaluate('and(4294967295,255)'), 255);
   close(evaluate('or(4294967295,0)'), -1);
@@ -187,6 +245,10 @@ test('binary operations validate ranges and preserve signed 32-bit behavior', ()
   for (const expr of ['and(1.5,2)','not(4294967296)','not(-2147483649)','shl(1,-1)','shr(1,32)','shl(1,1.5)','0b102','0b','0b101.1']) assert.throws(() => evaluate(expr), expr);
 });
 
+// Scenario: a long list of inputs that must each throw: division/modulo by zero, domain
+// errors (sqrt(-1), ln(0), asin(2)), overflow to Infinity (exp(1000), 1e308*2), bad
+// factorial/combination arguments, and every malformed array/matrix shape. Why: the engine
+// promises it never returns NaN or Infinity.
 test('strict domains, finite intermediate values and matrix shape errors', () => {
   for (const expr of [
     '1/0','0/0','2%0','sqrt(-1)','ln(0)','ln(-1)','log(0)','log(2,1)','log(2,-1)',
@@ -200,6 +262,10 @@ test('strict domains, finite intermediate values and matrix shape errors', () =>
   ]) assert.throws(() => evaluate(expr), expr);
 });
 
+// Scenario: syntax errors and code-injection attempts (process.exit(), globalThis,
+// constructor(1), __proto__, template strings, arrow functions, eval) must be rejected as
+// plain unknown names or bad characters. Proves identifiers never reach JavaScript
+// objects. Non-string inputs are rejected too.
 test('malformed and malicious strings never execute code', () => {
   for (const expr of [
     '', ' ', '1+', '()', '2**3','2//3','sin 1','sin(1,2)','(1','1)','[1,]','1,2', '1.2.3',
@@ -210,6 +276,10 @@ test('malformed and malicious strings never execute code', () => {
   for (const value of [null, undefined, 1, {}, []]) assert.throws(() => evaluate(value));
 });
 
+// Scenario: one input per LIMITS entry (length, token count, nesting depth for brackets,
+// unary chains, function calls and power chains, array dimension, argument count) must hit
+// its specific error. Then a 16x16 identity inverts successfully (limit is inclusive), while
+// multiplying the same matrix 30 times exceeds the work budget.
 test('length, token, recursion, argument, matrix and evaluation-work limits', () => {
   for (const expr of [
     '1'.repeat(16385), Array(1100).fill('1').join('+'), '('.repeat(1000)+'1'+')'.repeat(1000),
@@ -222,6 +292,9 @@ test('length, token, recursion, argument, matrix and evaluation-work limits', ()
   assert.throws(() => evaluate(Array(30).fill('ans').join('*'), {variables:{ans:m}}), /work limit/);
 });
 
+// Scenario: toPrecision-based formatting trims trailing zeros, shows -0 as 0, nests arrays
+// in brackets, switches to exponent form for extreme values and refuses non-finite values,
+// empty arrays and bad precision arguments.
 test('formatting uses significant precision and rejects nonfinite/invalid data', () => {
   assert.equal(formatValue(Math.PI), '3.14159265359');
   assert.equal(formatValue(1.234567,4), '1.235');
@@ -232,9 +305,15 @@ test('formatting uses significant precision and rejects nonfinite/invalid data',
   for (const precision of [0,101,1.5,NaN,'12']) assert.throws(()=>formatValue(1,precision));
 });
 
-// Reproducible 32-bit LCG; each property owns its seed and fixed sample budget.
-// Small deterministic PRNG (LCG) so "random" property tests are reproducible
-// and a failure can be replayed from the seed.
+/**
+ * Small deterministic PRNG so "random" property tests are reproducible: a failure can be
+ * replayed from the seed. Uses the classic Numerical Recipes LCG constants (multiplier
+ * 1664525, increment 1013904223) modulo 2^32; Math.imul keeps the multiply in 32 bits.
+ * Statistical quality is irrelevant here; only repeatability matters.
+ *
+ * @param {number} seed - any integer; coerced to uint32.
+ * @returns {() => number} generator of floats in [0, 1).
+ */
 function seededRandom(seed) {
   let state = seed >>> 0;
   return () => {
@@ -246,6 +325,11 @@ function seededRandom(seed) {
 // grad when checking that all three modes agree.
 const angleScales = [['rad', 1], ['deg', 180 / Math.PI], ['grad', 200 / Math.PI]];
 
+// Property: for 600 random angles in about +-8 pi, sin/cos/tan/sec/csc/cot computed through
+// each angle unit equal the Math.* values, sin^2+cos^2 = 1, and the Pythagorean identities
+// hold. Samples near poles are excluded per function (|cos| or |sin| below 0.05) so the
+// check measures unit conversion instead of conditioning, and counters prove each
+// reciprocal still got more than 500 samples.
 test('seeded property: 600 bounded angles agree across units and reciprocal identities', () => {
   const random = seededRandom(0xA961E);
   const reciprocalCounts = { tan: 0, sec: 0, csc: 0, cot: 0 };
@@ -268,6 +352,10 @@ test('seeded property: 600 bounded angles agree across units and reciprocal iden
   for (const count of Object.values(reciprocalCounts)) assert.ok(count > 500, 'Each reciprocal needs substantial nonsingular coverage');
 });
 
+// Property: inverse functions round-trip in every unit (asin(sin x) = x on the principal
+// range, acos(cos x), atan2(sin x, cos x), sin(asin v) = v), and each inverse also matches a
+// standalone Math.* oracle so two compensating errors cannot hide. Margins around the branch
+// endpoints avoid amplifying tiny input errors.
 test('seeded property: 600 principal-angle and inverse-value roundtrips in every angle mode', () => {
   const random = seededRandom(0x1A2B3C);
   for (let sample = 0; sample < 600; sample++) {
@@ -294,6 +382,10 @@ test('seeded property: 600 principal-angle and inverse-value roundtrips in every
   }
 });
 
+// Property: for 400 random integer 2x2 matrices with |det| >= 20 (well conditioned), the
+// engine's inverse matches the closed form, A*A^-1 = A^-1*A = I, inverse(inverse(A)) = A,
+// det(A^-1) = 1/det(A) and the input is untouched. Counters assert both determinant signs
+// and more than 100 cases where row 2 is the larger pivot, so the pivot-swap path is exercised.
 test('seeded property: 400 invertible 2x2 matrices satisfy both inverse products and closed forms', () => {
   const random = seededRandom(0x2A2B);
   const identity = [[1,0],[0,1]];
@@ -322,7 +414,10 @@ test('seeded property: 400 invertible 2x2 matrices satisfy both inverse products
 
 // Fuzz: build valid expressions, corrupt them with known-bad mutations (unbalanced
 // parentheses, bad literals, stray symbols, __proto__) and require a plain Error
-// with a message, never an internal exception type or a crash.
+// with a message, never an internal exception type (TypeError, RangeError) or a crash.
+// Part 2 feeds 1000 random strings from a calculator-like alphabet: each must either throw
+// a plain Error or return a bounded finite value (valid expressions occasionally appear by
+// chance), and at least 900 must be rejected, proving the alphabet is mostly invalid.
 test('seeded property: 1200 malformed mutations reject and 1000 bounded random strings remain safe', () => {
   const random = seededRandom(0xF022);
   const pick = values => values[Math.floor(random()*values.length)];
