@@ -59,6 +59,18 @@ function product(a, b, ctx) {
     return total;
   }));
 }
+/**
+ * Gaussian elimination with partial pivoting for square matrices.
+ * Computes either:
+ *   - The matrix determinant (invert=false) in O(N^3) arithmetic operations.
+ *   - The matrix inverse (invert=true) via Gauss-Jordan elimination on augmented [A | I].
+ * 
+ * Numerical Stability & Partial Pivoting:
+ * Floating-point arithmetic on unpivoted matrices is prone to catastrophic roundoff error
+ * if a diagonal pivot is close to zero. Partial pivoting scans column entries to locate the
+ * row with maximum absolute pivot magnitude, swapping rows to preserve numerical precision.
+ * Singular / ill-conditioned detection compares pivot magnitude against machine epsilon (Number.EPSILON * n * scale).
+ */
 function elimination(value, invert, ctx) {
   const [n] = matrix(value, true);
   const a = value.map(row => row.slice());
@@ -258,6 +270,19 @@ function tokenize(expression) {
 
 /** Evaluate a real-valued expression. Default angle mode: radians. x is a finite scalar; ans may also be a vector or matrix. */
 // Step 3: Evaluate expression with execution limits (max operations, recursion depth)
+/**
+ * Recursive Descent Mathematical Evaluator
+ * Evaluates an infix expression through predictive recursive descent parsing:
+ *   add (precedence 1: +, -)
+ *     -> multiply (precedence 2: *, /, %, implicit multiplication)
+ *       -> unaryExpression (precedence 3: prefix +, -)
+ *         -> power (precedence 4: factorial postfix !, exponentiation ^)
+ *           -> primary (numbers, grouped subexpressions, arrays, function calls, variables)
+ * 
+ * Safety & Denial of Service Defense:
+ * Tracks recursion call depth (depth limit 64) and operation counts (work limit 100,000)
+ * to prevent stack overflow from deeply nested parentheses and CPU exhaustion from matrix operations.
+ */
 export function evaluate(expression, options = {}) {
   if (!options || typeof options !== 'object' || isArray(options)) fail('Options must be an object');
   const { angle = 'rad', variables = {} } = options;
