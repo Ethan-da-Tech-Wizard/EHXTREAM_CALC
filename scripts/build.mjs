@@ -25,7 +25,7 @@ const [engine,component,html,css]=await Promise.all(['engine.js','calculator.js'
 // Plain concatenation, not a real bundler: engine.js has no imports, and its exports
 // (export function/const) remain valid inside the combined module, so calculator.js can use
 // those names directly after the import line is removed.
-const bundle=engine+'\n'+component.replace(/^import .*?from '\.\/engine\.js';\s*/, '');
+const bundle=engine+'\n'+component.replace(/^import .*?from '\.\/engine\.js';\s*/m, '');
 // Inline the stylesheet and bundled script into index.html. The replacement is
 // a function so `$` sequences in the code are not treated as replacement
 // patterns, and `</script` is escaped so the inline script cannot end early.
