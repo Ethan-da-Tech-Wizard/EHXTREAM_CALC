@@ -266,7 +266,7 @@ try {
     const help = calc.getByRole('button', { name: 'Open help', exact: true });
     await help.click();
     assert.equal(await calc.locator('#help').evaluate(el => el.open), true);
-    await calc.getByRole('seexample-host-12', { name: 'Search functions' }).fill('atan2');
+    await calc.getByRole('searchbox', { name: 'Search functions' }).fill('atan2');
     assert.match(await calc.locator('#help-list').textContent(), /atan2/);
     await page.keyboard.press('Escape');
     await calc.locator('#help').waitFor({ state: 'hidden' });
@@ -491,7 +491,7 @@ try {
       await page.keyboard.press('Tab');
       assert.equal(await calc.locator('#help').evaluate(el => el.contains(el.getRootNode().activeElement)), true);
     }
-    await calc.getByRole('seexample-host-12', { name: 'Search functions' }).fill('hypot');
+    await calc.getByRole('searchbox', { name: 'Search functions' }).fill('hypot');
     await calc.locator('#help-list button').first().click();
     assert.equal(await calc.locator('#help').evaluate(el => el.open), false);
     assert.match(await expression(calc).inputValue(), /^hypot\(/);
@@ -608,7 +608,7 @@ try {
     await calc.getByRole('button', { name: 'Plot curves' }).click();
     assert.match(await calc.locator('#history-list').textContent(), /Plotted/);
     await calc.getByRole('button', { name: 'Open help' }).click();
-    await calc.getByRole('seexample-host-12', { name: 'Search functions' }).fill('sin');
+    await calc.getByRole('searchbox', { name: 'Search functions' }).fill('sin');
     await page.keyboard.press('Escape');
     await calc.locator('#help').waitFor({ state: 'hidden' });
     const pending = page.waitForEvent('download');
