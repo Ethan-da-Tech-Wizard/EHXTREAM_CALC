@@ -1,59 +1,110 @@
-# Extreme Calculator
+# EHXTREAM_CALC (Extreme Calculator)
 
-An embeddable scientific and graphing calculator with matrix tools, custom-element UI, and standalone offline builds.
+A small scientific and graphing calculator you can embed in a web page: a dependency-free expression engine plus a `<extreme-calculator>` web component, with an optional single-file offline build.
 
-**Status:** small personal project. The author's own tests pass (below); they are not an independent audit, and the calculator has not been checked against other math software.  
-**Built with:** JavaScript, Web Components, Node.js
+## What it does and why
 
-[Project guide](docs/PROJECT_GUIDE.md) · [Every file explained](docs/FILE_GUIDE.md) · [Licenses and dependencies](docs/LICENSE_REVIEW.md)
+I wanted a calculator that could be dropped into another app without a framework, an account or network calls, and that evaluates typed expressions without `eval`. It has:
 
-## Start here
+- an expression engine (`engine.js`): arithmetic with precedence, scientific functions, degree/radian/gradian angle modes, combinatorics, 32-bit bitwise operations, and matrices up to 16x16 (determinant, inverse, product);
+- a web component (`calculator.js`): keypad, history, a function reference and graphing of up to three curves on a canvas;
+- a build script that bundles both into `dist/` (an embeddable `.js`, a standalone `.html` that opens from disk, and gzip/Brotli copies).
 
-- [engine.js](engine.js) — Source module for engine; defines `shape`, `matrix`, `vector`, `map`, `zip`, `product`, `elimination` and 26 more symbols.
-- [calculator.js](calculator.js) — Source module for calculator; defines `ExtremeCalculator`, `using`, `field`, `icon`, `on`, `step`.
-- [examples/embed.html](examples/embed.html) — Browser document: Embed Extreme; provides page structure and may include inline styles or application logic.
+## Status
 
-Requires Node (developed and tested here on Node 24; `package.json` declares 20 or newer). There are no runtime or dev dependencies to install.
+Small personal project, tested only by my own tests. The engine has an automated suite that needs only Node. The UI has a separate browser suite that needs a browser and **was not run in CI**; I ran it by hand once (see Tests). The calculator has not been checked against other math software, and nobody else has reviewed the code. Much of the code and documentation was written with AI coding assistants under my direction.
+
+## Quick start
+
+Needs Node 20 or newer (developed on Node 24). No install step, no dependencies.
 
 ```sh
-npm start
-# Engine tests (no browser needed)
-npm test
-# Produce the standalone build in dist/
-npm run build
+npm test            # engine tests, no browser needed
+npm start           # demo at http://localhost:4173
+npm run build       # writes dist/
 ```
 
-`npm start` serves the demo at http://localhost:4173. `dist/extreme-calculator.html` is a single file that opens straight from disk.
+Use the engine from Node (output observed on Node 24.22.1, 2026-11-21):
+
+```js
+import { evaluate, formatValue } from './engine.js';
+evaluate('2+3*4');                           // 14
+evaluate('sin(30)', { angle: 'deg' });       // 0.49999999999999994 (floating point; formatValue rounds for display)
+evaluate('inverse([[1,2],[3,4]])');          // [[-1.9999999999999996,0.9999999999999998],[1.4999999999999998,-0.49999999999999994]]
+formatValue(evaluate('10!'));                // '3628800'
+evaluate('1/0');                             // throws Error('Division by zero')
+evaluate('2+');                              // throws Error('Expected a number, function, or parenthesis at token 3')
+```
+
+Embed the UI (serve the files over HTTP; `dist/extreme-calculator.html` opens straight from disk):
+
+```html
+<script type="module" src="/calculator.js"></script>
+<extreme-calculator storage-key="my-app-math"></extreme-calculator>
+```
+
+## Usage
+
+- `evaluate(expression, { angle, variables })` returns a number, a vector or a matrix. `angle` is `deg`, `rad` or `grad`; `variables` may only use `x` and `ans`. Invalid input throws an `Error` with a readable message.
+- `formatValue(value, precision = 12)` turns a result into display text. `FUNCTIONS` is the frozen list of supported functions with syntax and examples.
+- The element has methods `calculate(expression?)`, `setAngle(unit)`, `setMode(mode)`, `exportHistory()` and fires bubbling `calculate` and `calculation-error` events. TypeScript declarations are in `index.d.ts` and `calculator.d.ts`.
+- More: [PROJECT_NOTES.md](PROJECT_NOTES.md), [docs/PROJECT_GUIDE.md](docs/PROJECT_GUIDE.md), [docs/FILE_GUIDE.md](docs/FILE_GUIDE.md).
+
+## Configuration
+
+| Setting | Where | Meaning |
+|---|---|---|
+| `storage-key` | element attribute | `localStorage` key for saved angle mode, precision and history. Omit it and nothing is saved. |
+| `--calc-accent`, `--calc-bg`, `--calc-text`, `--calc-muted` | CSS variables on the element | Retheme the component. |
+| `angle` | `evaluate` option | `deg`, `rad` or `grad`. |
+| `LIMITS` | `engine.js` | Caps: 16384 characters, 2048 tokens, nesting depth 64, 16 entries per dimension, 100000 work units per call. |
+| `PORT` | environment, `npm start` | Port of the demo server (default 4173, listens on 127.0.0.1 only). |
+| `PLAYWRIGHT_MODULE`, `CHROMIUM_PATH` | environment, browser test only | Where to find Playwright and a Chromium-based browser. |
+
+## How it works
+
+`engine.js` tokenizes an expression (cached), then a recursive-descent parser computes values as it parses (there is no syntax tree), checks every number is finite, and validates the result shape. There is no `eval` or `new Function`; resource caps are enforced inline. `calculator.js` is a Shadow-DOM web component that does no math of its own: it calls `evaluate`/`formatValue`/`FUNCTIONS` for every keypress and graph sample. `scripts/build.mjs` concatenates `engine.js` and `calculator.js` into `dist/`; `dist/` is generated and never edited by hand.
+
+## Security notes and limits
+
+- Evaluation never executes expression text as code, and the caps bound the work of one call. A page that evaluates untrusted input in a loop still needs its own rate limiting.
+- An embedded calculator stores history in `localStorage` only if you set `storage-key`; the demo page saves history on the device automatically. Do not use a calculator history for anything sensitive.
+- Ordinary floating point: not for safety-critical or financial work. No complex numbers; matrices at most 16x16.
+- Browser testing was done in Chrome only.
+
+Report vulnerabilities privately through the Security tab (see [SECURITY.md](SECURITY.md)).
 
 ## Tests
 
-- `npm test` runs `engine.test.js` with Node's built-in runner. Observed on a fresh clone, 2026-11-21: 64 tests, 64 pass, 0 fail.
-- `npm run test:browser` runs `browser.test.mjs`, a 21-check UI suite. It is **optional and not part of `npm test`** because it needs Playwright and a Chromium-based browser, which are deliberately not declared in `package.json` (to keep the project dependency-free). Install them yourself, then point the test at them:
+- `npm test` runs `engine.test.js` with Node's built-in runner. Observed 2026-11-21 on macOS arm64, Node 24.22.1, scratch `HOME` and `TMPDIR`: `tests 64, pass 64, fail 0, skipped 0`.
+- `npm run test:browser` runs `browser.test.mjs`, a 21-check UI suite. It **needs a real browser** (Playwright plus a Chromium-based browser, deliberately not declared in `package.json`) and is **not run in CI**. Install them yourself, build first, then point the test at them:
 
 ```sh
+npm run build
 npm install --prefix /tmp/extreme-browser-verification playwright
 PLAYWRIGHT_MODULE=/tmp/extreme-browser-verification/node_modules/playwright/index.mjs \
 CHROMIUM_PATH="/path/to/chromium-or-chrome" npm run test:browser
 ```
 
-  Observed 2026-11-21 on macOS with Playwright 1.49.1 and Google Chrome: 21 of 21 checks pass after rebuilding `dist/` with `npm run build`. Before the build-script fix in this commit, the standalone `file://` check failed (20 of 21) because the committed `dist/` bundle was stale and declared `evaluate` twice. The test also rewrites `verification/function-audit.json` as a side effect.
-
-[Detailed setup, usage, and development notes](PROJECT_NOTES.md) preserve the previous project documentation.
+  I ran it by hand earlier on 2026-11-21 on macOS with Playwright 1.49.1 and Google Chrome: 21 of 21 checks passed after rebuilding `dist/` (a stale `dist/` made the standalone `file://` check fail, 20 of 21, before the build fix). I did not re-run it for this README change. The test rewrites `verification/function-audit.json` as a side effect.
+- CI (`.github/workflows/ci.yml`) runs `npm test` on Ubuntu and macOS with Node 24 and checks that `npm run build` reproduces the committed `dist/` bundle and page. See the Actions tab for the current result.
 
 ## Repository layout
 
 | Path | Role |
 | --- | --- |
-| [dist/](dist/) | Generated distributable artifacts (4 tracked entries). |
-| [docs/](docs/) | Project documentation, decisions, and reference material (5 tracked entries). |
-| [examples/](examples/) | Usage examples and demonstration inputs (1 tracked entries). |
-| [scripts/](scripts/) | Build, launch, maintenance, and verification commands (2 tracked entries). |
-| [verification/](verification/) | Recorded verification evidence and supporting checks (1 tracked entries). |
+| `engine.js`, `engine.test.js` | Expression engine and its tests. |
+| `calculator.js`, `index.html`, `demo.css` | Web component and demo page. |
+| `index.d.ts`, `calculator.d.ts` | TypeScript declarations. |
+| `scripts/` | `build.mjs` (bundler) and `serve.mjs` (demo server). |
+| `dist/` | Generated bundles. |
+| `browser.test.mjs`, `verification/` | Optional browser suite and its recorded output. |
+| `docs/` | Project guide, per-file guide, license and dependency review. |
 
-## Scope and current limits
+## Contributing
 
-The calculator has no runtime package dependencies. Browser testing was done in Chromium-based Chrome only. The scientific and matrix functions are tested by the author's own suite; do not rely on them for safety-critical or financial work. Much of the code and documentation was written with AI coding assistants under the author's direction.
+See [CONTRIBUTING.md](CONTRIBUTING.md) and the [Code of Conduct](CODE_OF_CONDUCT.md). Questions and bugs: GitHub Issues on this repository.
 
 ## License
 
-Original project code retains **MIT** terms in [LICENSE](LICENSE). Third-party libraries, media, data, models, and tools retain their own terms. See the [license review](docs/LICENSE_REVIEW.md) and [dependency inventory](docs/DEPENDENCIES.csv).
+MIT, see [LICENSE](LICENSE). Copyright holder: Ethan-da-Tech-Wizard. Third-party material keeps its own terms; see the [license review](docs/LICENSE_REVIEW.md) and [dependency inventory](docs/DEPENDENCIES.csv).

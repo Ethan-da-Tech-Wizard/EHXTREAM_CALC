@@ -4,6 +4,14 @@
   "description": "A compact, dependency-free scientific graphing calculator and embeddable web component",
   "type": "module",
   "license": "MIT",
+  "author": "Ethan-da-Tech-Wizard",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/Ethan-da-Tech-Wizard/EHXTREAM_CALC.git"
+  },
+  "bugs": {
+    "url": "https://github.com/Ethan-da-Tech-Wizard/EHXTREAM_CALC/issues"
+  },
   "main": "engine.js",
   "exports": {
     ".": {
