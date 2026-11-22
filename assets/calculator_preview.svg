@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 860 380" width="860" height="380">
+  <defs>
+    <style>
+      .calc-bg { fill: #1e1e2e; }
+      .calc-header { fill: #11111b; }
+      .calc-title { fill: #a6adc8; font-family: monospace, monospace; font-size: 13px; font-weight: bold; text-anchor: middle; }
+      .calc-display { fill: #181825; stroke: #313244; stroke-width: 1; }
+      .calc-text { fill: #cdd6f4; font-family: monospace, monospace; font-size: 13px; }
+      .accent-cyan { fill: #89dceb; font-weight: bold; }
+      .accent-green { fill: #a6e3a1; font-weight: bold; }
+      .accent-yellow { fill: #f9e2af; font-weight: bold; }
+      .accent-dim { fill: #6c7086; }
+      .btn-red { fill: #f38ba8; }
+      .btn-yellow { fill: #f9e2af; }
+      .btn-green { fill: #a6e3a1; }
+      .key-fn { fill: #313244; stroke: #45475a; rx: 4; }
+      .key-num { fill: #181825; stroke: #313244; rx: 4; }
+      .key-op { fill: #45475a; stroke: #585b70; rx: 4; }
+      .key-eq { fill: #a6e3a1; stroke: #94e2d5; rx: 4; }
+      .key-text { fill: #cdd6f4; font-family: monospace, monospace; font-size: 12px; text-anchor: middle; dominant-baseline: middle; }
+      .key-text-dark { fill: #11111b; font-family: monospace, monospace; font-size: 13px; font-weight: bold; text-anchor: middle; dominant-baseline: middle; }
+    </style>
+  </defs>
+  <rect class="calc-bg" x="0" y="0" width="860" height="380" rx="10" ry="10" />
+  <path class="calc-header" d="M 0 10 A 10 10 0 0 1 10 0 L 850 0 A 10 10 0 0 1 860 10 L 860 42 L 0 42 Z" />
+  <circle class="btn-red" cx="24" cy="21" r="6" />
+  <circle class="btn-yellow" cx="42" cy="21" r="6" />
+  <circle class="btn-green" cx="60" cy="21" r="6" />
+  <text class="calc-title" x="430" y="26">&lt;extreme-calculator&gt; — Scientific, Graphing &amp; Matrix Engine</text>
+
+  <!-- Formula & Display -->
+  <rect class="calc-display" x="24" y="56" width="812" height="74" rx="6" />
+  <text class="calc-text" x="40" y="82" fill="#89b4fa">f(x) = inverse([[1, 2], [3, 4]]) * [5, 6]^T</text>
+  <text class="calc-text" x="40" y="112" font-size="16"><tspan class="accent-green">⇒ [-4, 4.5]</tspan>  <tspan class="accent-dim">| det(A) = -2 | norm = 6.0208 | angle: RAD</tspan></text>
+
+  <!-- Interactive Keypad Grid -->
+  <g transform="translate(24, 144)">
+    <!-- Row 1 -->
+    <rect class="key-fn" x="0" y="0" width="70" height="36" /><text class="key-text" x="35" y="18">sin</text>
+    <rect class="key-fn" x="78" y="0" width="70" height="36" /><text class="key-text" x="113" y="18">cos</text>
+    <rect class="key-fn" x="156" y="0" width="70" height="36" /><text class="key-text" x="191" y="18">tan</text>
+    <rect class="key-fn" x="234" y="0" width="70" height="36" /><text class="key-text" x="269" y="18">inv</text>
+    <rect class="key-fn" x="312" y="0" width="70" height="36" /><text class="key-text" x="347" y="18">det</text>
+    <rect class="key-num" x="390" y="0" width="70" height="36" /><text class="key-text" x="425" y="18">7</text>
+    <rect class="key-num" x="468" y="0" width="70" height="36" /><text class="key-text" x="503" y="18">8</text>
+    <rect class="key-num" x="546" y="0" width="70" height="36" /><text class="key-text" x="581" y="18">9</text>
+    <rect class="key-op" x="624" y="0" width="70" height="36" /><text class="key-text" x="659" y="18">/</text>
+    <rect class="key-op" x="702" y="0" width="110" height="36" /><text class="key-text" x="757" y="18">CLR</text>
+
+    <!-- Row 2 -->
+    <rect class="key-fn" x="0" y="44" width="70" height="36" /><text class="key-text" x="35" y="62">ln</text>
+    <rect class="key-fn" x="78" y="44" width="70" height="36" /><text class="key-text" x="113" y="62">log</text>
+    <rect class="key-fn" x="156" y="44" width="70" height="36" /><text class="key-text" x="191" y="62">sqrt</text>
+    <rect class="key-fn" x="234" y="44" width="70" height="36" /><text class="key-text" x="269" y="62">nCr</text>
+    <rect class="key-fn" x="312" y="44" width="70" height="36" /><text class="key-text" x="347" y="62">nPr</text>
+    <rect class="key-num" x="390" y="44" width="70" height="36" /><text class="key-text" x="425" y="62">4</text>
+    <rect class="key-num" x="468" y="44" width="70" height="36" /><text class="key-text" x="503" y="62">5</text>
+    <rect class="key-num" x="546" y="44" width="70" height="36" /><text class="key-text" x="581" y="62">6</text>
+    <rect class="key-op" x="624" y="44" width="70" height="36" /><text class="key-text" x="659" y="62">*</text>
+    <rect class="key-op" x="702" y="44" width="110" height="36" /><text class="key-text" x="757" y="62">DEL</text>
+
+    <!-- Row 3 -->
+    <rect class="key-fn" x="0" y="88" width="70" height="36" /><text class="key-text" x="35" y="106">shl</text>
+    <rect class="key-fn" x="78" y="88" width="70" height="36" /><text class="key-text" x="113" y="106">shr</text>
+    <rect class="key-fn" x="156" y="88" width="70" height="36" /><text class="key-text" x="191" y="106">xor</text>
+    <rect class="key-fn" x="234" y="88" width="70" height="36" /><text class="key-text" x="269" y="106">deg</text>
+    <rect class="key-fn" x="312" y="88" width="70" height="36" /><text class="key-text" x="347" y="106">rad</text>
+    <rect class="key-num" x="390" y="88" width="70" height="36" /><text class="key-text" x="425" y="106">1</text>
+    <rect class="key-num" x="468" y="88" width="70" height="36" /><text class="key-text" x="503" y="106">2</text>
+    <rect class="key-num" x="546" y="88" width="70" height="36" /><text class="key-text" x="581" y="106">3</text>
+    <rect class="key-op" x="624" y="88" width="70" height="36" /><text class="key-text" x="659" y="106">-</text>
+    <rect class="key-op" x="702" y="88" width="110" height="36" /><text class="key-text" x="757" y="106">GRAPH</text>
+
+    <!-- Row 4 -->
+    <rect class="key-fn" x="0" y="132" width="70" height="36" /><text class="key-text" x="35" y="150">(</text>
+    <rect class="key-fn" x="78" y="132" width="70" height="36" /><text class="key-text" x="113" y="150">)</text>
+    <rect class="key-fn" x="156" y="132" width="70" height="36" /><text class="key-text" x="191" y="150">[ ]</text>
+    <rect class="key-fn" x="234" y="132" width="70" height="36" /><text class="key-text" x="269" y="150">pi</text>
+    <rect class="key-fn" x="312" y="132" width="70" height="36" /><text class="key-text" x="347" y="150">e</text>
+    <rect class="key-num" x="390" y="132" width="70" height="36" /><text class="key-text" x="425" y="150">0</text>
+    <rect class="key-num" x="468" y="132" width="70" height="36" /><text class="key-text" x="503" y="150">.</text>
+    <rect class="key-num" x="546" y="132" width="70" height="36" /><text class="key-text" x="581" y="150">x</text>
+    <rect class="key-op" x="624" y="132" width="70" height="36" /><text class="key-text" x="659" y="150">+</text>
+    <rect class="key-eq" x="702" y="132" width="110" height="36" /><text class="key-text-dark" x="757" y="150">=</text>
+  </g>
+
+  <!-- Bottom status info -->
+  <text class="calc-text" x="24" y="340" fill="#a6adc8">64 Hermetic Tests Passing | Standalone Offline dist/extreme-calculator.html | Zero eval()</text>
+</svg>
